@@ -106,7 +106,7 @@ const start = async () => {
 
   const connection = await mongoose.connect(process.env.MONGODB_URI);
   console.log(`MongoDB connected to ${connection.connection.host}/${connection.connection.name}`);
-  server = app.listen(port, () => console.log(`API listening on port ${port}`));
+  server = app.listen(port, '0.0.0.0', () => console.log(`API listening on port ${port}`));
 };
 
 start().catch((error) => {
