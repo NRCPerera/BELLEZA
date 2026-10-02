@@ -38,6 +38,14 @@ const healthCheck = (req, res) => {
   res.status(databaseReady ? 200 : 503).json({ status: databaseReady ? 'ok' : 'degraded' });
 };
 
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected');
+});
+
+mongoose.connection.on('error', (error) => {
+  console.error(`MongoDB connection error: ${error.message}`);
+});
+
 app.get('/health', healthCheck);
 app.get('/api/health', healthCheck);
 
@@ -96,7 +104,8 @@ const start = async () => {
     throw new Error('MONGODB_URI and JWT_SECRET must be configured');
   }
 
-  await mongoose.connect(process.env.MONGODB_URI);
+  const connection = await mongoose.connect(process.env.MONGODB_URI);
+  console.log(`MongoDB connected to ${connection.connection.host}/${connection.connection.name}`);
   server = app.listen(port, () => console.log(`API listening on port ${port}`));
 };
 
