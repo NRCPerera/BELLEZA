@@ -1,0 +1,274 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════
+   BELLEZA DESIGN TOKENS — Central theme file
+   All application colors are defined here as CSS custom properties.
+   Pages and components reference these tokens via Tailwind classes.
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* ─── Core palette ─────────────────────────────────────────── */
+  --color-background:    #FAF7F2;   /* Warm ivory */
+  --color-surface:       #FFFFFF;   /* Card / panel */
+  --color-surface-alt:   #F1E6E1;   /* Blush beige sections */
+  --color-text:          #292526;   /* Charcoal text */
+
+  /* ─── Deep plum primary scale ──────────────────────────────── */
+  --color-primary-50:    #f6f0f3;
+  --color-primary-100:   #ecdce2;
+  --color-primary-200:   #d9b8c5;
+  --color-primary-300:   #c08fa2;
+  --color-primary-400:   #9e607a;
+  --color-primary-500:   #7a3d5c;
+  --color-primary-600:   #5e2e47;
+  --color-primary-700:   #4B2638;   /* ← Deep plum key */
+  --color-primary-800:   #3a1e2d;
+  --color-primary-900:   #2a1520;
+
+  /* ─── Soft rose accent scale ───────────────────────────────── */
+  --color-accent-50:     #fdf5f7;
+  --color-accent-100:    #f8e4ea;
+  --color-accent-200:    #f0c9d4;
+  --color-accent-300:    #e5abbb;
+  --color-accent-400:    #D99AA6;   /* ← Soft rose key */
+  --color-accent-500:    #c47f91;
+  --color-accent-600:    #a8607a;
+  --color-accent-700:    #8c4963;
+
+  /* ─── Muted gold highlight scale ───────────────────────────── */
+  --color-highlight-50:  #faf6ef;
+  --color-highlight-100: #f3ebda;
+  --color-highlight-200: #e5d4b3;
+  --color-highlight-300: #d5bd8e;
+  --color-highlight-400: #C5A46D;   /* ← Muted gold key */
+  --color-highlight-500: #b08f57;
+  --color-highlight-600: #957644;
+  --color-highlight-700: #7a5f36;
+
+  /* ─── Ink (neutral text / UI) scale ────────────────────────── */
+  --color-ink-50:        #FAF7F2;
+  --color-ink-100:       #e8e2dc;
+  --color-ink-200:       #d0c8c0;
+  --color-ink-500:       #706868;
+  --color-ink-700:       #453e3e;
+  --color-ink-900:       #292526;   /* ← Charcoal key */
+
+  color-scheme: light;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased;
+    color: var(--color-text);
+    background-color: var(--color-background);
+  }
+  *:focus-visible {
+    @apply outline-none ring-2 ring-offset-2;
+    --tw-ring-color: var(--color-primary-500);
+  }
+}
+
+@layer components {
+  /* ─── Buttons ──────────────────────────────────────────────── */
+  .btn-primary {
+    @apply px-6 py-3 rounded-full font-medium
+           transition-all duration-200 ease-in-out
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           shadow-sm hover:shadow-float;
+    background-color: var(--color-primary-700);
+    color: #fff;
+  }
+  .btn-primary:hover { background-color: var(--color-primary-600); }
+  .btn-primary:active { background-color: var(--color-primary-800); }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-full font-medium
+           transition-all duration-200 ease-in-out
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+    background-color: var(--color-surface);
+    color: var(--color-ink-900);
+    border: 1px solid var(--color-ink-100);
+  }
+  .btn-secondary:hover { background-color: var(--color-primary-50); }
+  .btn-secondary:active { background-color: var(--color-primary-100); }
+
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg font-medium
+           transition-all duration-200 ease-in-out;
+    color: var(--color-ink-500);
+  }
+  .btn-ghost:hover { background-color: var(--color-ink-100); }
+  .btn-ghost:active { background-color: var(--color-ink-200); }
+
+  .btn-danger {
+    @apply px-4 py-2 rounded-lg font-medium
+           transition-all duration-200 ease-in-out;
+    background-color: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+  }
+  .btn-danger:hover { background-color: #fee2e2; }
+
+  /* ─── Card ─────────────────────────────────────────────────── */
+  .card {
+    @apply rounded-3xl shadow-soft
+           hover:shadow-float transition-shadow duration-300;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-ink-100);
+  }
+
+  /* ─── Input ────────────────────────────────────────────────── */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl outline-none transition-all duration-200;
+    border: 1px solid var(--color-ink-100);
+    background-color: var(--color-surface);
+    color: var(--color-ink-900);
+  }
+  .input-field::placeholder { color: var(--color-ink-500); opacity: 0.6; }
+  .input-field:focus {
+    border-color: var(--color-primary-400);
+    box-shadow: 0 0 0 3px var(--color-primary-100);
+  }
+
+  /* ─── Labels & errors ──────────────────────────────────────── */
+  .ui-label {
+    @apply mb-1.5 block text-sm font-medium;
+    color: var(--color-ink-700);
+  }
+  .ui-error { @apply mt-1.5 text-xs font-medium text-red-600; }
+
+  /* ─── Status badges ────────────────────────────────────────── */
+  .badge-pending {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-yellow-50 text-yellow-700 border border-yellow-200;
+  }
+  .badge-confirmed {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-green-50 text-green-700 border border-green-200;
+  }
+  .badge-cancelled {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-red-50 text-red-700 border border-red-200;
+  }
+  .badge-completed {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    background-color: var(--color-ink-100);
+    color: var(--color-ink-500);
+    border: 1px solid var(--color-ink-200);
+  }
+  .badge-no-show {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-orange-50 text-orange-700 border border-orange-200;
+  }
+}
+
+@layer utilities {
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.2em];
+    color: var(--color-highlight-500);
+  }
+  .section-title {
+    @apply font-display text-4xl font-bold leading-[.95] sm:text-5xl;
+    color: var(--color-ink-900);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   React Big Calendar — themed overrides
+   ═══════════════════════════════════════════════════════════════ */
+.rbc-calendar {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--color-ink-900);
+}
+.rbc-header {
+  padding: 12px 8px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--color-ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-ink-100) !important;
+  background: var(--color-background);
+}
+.rbc-today {
+  background-color: var(--color-primary-50) !important;
+}
+.rbc-event {
+  background-color: var(--color-primary-700) !important;
+  border: none !important;
+  border-radius: 9px !important;
+  padding: 4px 7px !important;
+  font-size: 0.75rem !important;
+}
+.rbc-event.rbc-selected {
+  background-color: var(--color-primary-800) !important;
+}
+.rbc-toolbar button {
+  border-radius: 10px !important;
+  border: 1px solid var(--color-ink-100) !important;
+  padding: 6px 16px !important;
+  font-size: 0.875rem !important;
+  color: var(--color-ink-900) !important;
+  background: var(--color-surface) !important;
+  transition: all 0.2s !important;
+}
+.rbc-toolbar button:hover {
+  background-color: var(--color-primary-50) !important;
+  border-color: var(--color-accent-400) !important;
+}
+.rbc-toolbar button.rbc-active {
+  background-color: var(--color-primary-700) !important;
+  color: #fff !important;
+  border-color: var(--color-primary-600) !important;
+}
+.rbc-time-slot {
+  border-top: 1px solid var(--color-background) !important;
+}
+.rbc-timeslot-group { min-height: 60px; }
+.rbc-month-view, .rbc-time-view {
+  border-color: var(--color-ink-100) !important;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.rbc-day-bg + .rbc-day-bg,
+.rbc-time-header-content,
+.rbc-time-content > * + * > * {
+  border-color: var(--color-ink-100) !important;
+}
+.rbc-off-range-bg { background: var(--color-background) !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.4s ease-out; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slideUp 0.5s ease-out; }
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(75, 38, 56, 0.35); }
+  50%      { box-shadow: 0 0 0 10px rgba(75, 38, 56, 0); }
+}
+.animate-pulse-glow { animation: pulseGlow 2s infinite; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Smooth scrollbar
+   ═══════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-background); }
+::-webkit-scrollbar-thumb { background: var(--color-ink-200); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); }

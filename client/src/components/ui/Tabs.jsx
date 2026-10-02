@@ -1,0 +1,2 @@
+const Tabs = ({ tabs, value, onChange, ariaLabel = 'Tabs' }) => <div className="flex gap-1 rounded-xl bg-ink-50 p-1" role="tablist" aria-label={ariaLabel}>{tabs.map((tab) => <button key={tab.value} role="tab" aria-selected={value === tab.value} onClick={() => onChange(tab.value)} className={`rounded-lg px-3 py-2 text-sm font-medium transition ${value === tab.value ? 'bg-white text-primary-700 shadow-sm' : 'text-ink-500 hover:text-ink-900'}`}>{tab.label}</button>)}</div>;
+export default Tabs;

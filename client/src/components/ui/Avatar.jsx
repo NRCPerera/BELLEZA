@@ -1,0 +1,2 @@
+const Avatar = ({ src, name = '', size = 'md', className = '' }) => { const widths = { sm: 'h-8 w-8 text-xs', md: 'h-10 w-10 text-sm', lg: 'h-14 w-14 text-lg' }; const initials = name.split(' ').map((part) => part[0]).join('').slice(0, 2); return <div className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-100 font-semibold text-primary-700 ${widths[size]} ${className}`} aria-label={name || 'Avatar'}>{src ? <img src={src} alt="" className="h-full w-full object-cover" /> : initials}</div>; };
+export default Avatar;
