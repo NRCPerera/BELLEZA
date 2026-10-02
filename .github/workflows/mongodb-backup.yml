@@ -1,0 +1,32 @@
+name: MongoDB backup
+
+on:
+  schedule:
+    - cron: '20 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mongodump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install MongoDB Database Tools
+        run: |
+          curl -fsSL https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-x86_64-100.11.0.tgz -o tools.tgz
+          tar -xzf tools.tgz
+          echo "${PWD}/mongodb-database-tools-ubuntu2204-x86_64-100.11.0/bin" >> "$GITHUB_PATH"
+      - name: Create compressed database dump
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_BACKUP_URI }}
+        run: |
+          test -n "$MONGODB_URI"
+          mkdir -p backups
+          mongodump --uri="$MONGODB_URI" --archive="backups/mongodb-${{ github.run_id }}.archive.gz" --gzip
+      - name: Retain encrypted-at-rest GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mongodb-backup-${{ github.run_id }}
+          path: backups/*.archive.gz
+          retention-days: 30

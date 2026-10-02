@@ -1,14 +1,27 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const sharp = require('sharp');
+const cloudinary = require('../services/cloudinary');
+const rateLimit = require('express-rate-limit');
 const Appointment = require('../models/Appointment');
 const Staff = require('../models/Staff');
 const { authenticate, authorize } = require('../middleware/auth');
+const { avatarFile, validateMagicBytes } = require('../middleware/upload');
+const { syncStaffServices } = require('../services/staffServices');
 const { sendStatusUpdateEmail } = require('../services/emailService');
 
 const router = express.Router();
 
 // All routes require staff role
 router.use(authenticate, authorize('staff'));
+
+const avatarUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { message: 'Too many photo uploads. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Middleware: resolve the Staff profile linked to the logged-in User
 router.use(async (req, res, next) => {
@@ -210,11 +223,48 @@ router.get('/profile', async (req, res) => {
   }
 });
 
+// Upload a profile avatar. Images are re-encoded to strip EXIF/GPS metadata.
+router.post('/profile/photo', avatarUploadLimiter, avatarFile, validateMagicBytes, async (req, res) => {
+  try {
+    const processedImage = await sharp(req.file.buffer)
+      .rotate()
+      .resize(512, 512, { fit: 'cover', position: 'attention' })
+      .webp({ quality: 85 })
+      .toBuffer();
+
+    const cloudResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          public_id: 'luxe-salon/staff/' + req.staffProfile._id + '/avatar',
+          resource_type: 'image',
+          format: 'webp',
+          quality: 'auto:good',
+          overwrite: true,
+          invalidate: true,
+        },
+        (uploadError, result) => (uploadError ? reject(uploadError) : resolve(result))
+      );
+      stream.end(processedImage);
+    });
+
+    const updated = await Staff.findByIdAndUpdate(
+      req.staffProfile._id,
+      { photo: cloudResult.secure_url },
+      { new: true, runValidators: true }
+    );
+
+    res.json(updated);
+  } catch (error) {
+    console.error('Staff profile photo upload error:', error);
+    res.status(500).json({ message: 'Unable to upload profile photo' });
+  }
+});
+
 // ─── PATCH /api/staff/me/profile ────────────────────────────────────────────
 // Whitelist: bio, specialties, photo (avatar). Working hours are read-only.
 router.patch('/profile', async (req, res) => {
   try {
-    const allowedFields = ['bio', 'specialties', 'photo'];
+    const allowedFields = ['bio'];
     const updates = {};
 
     for (const field of allowedFields) {
@@ -223,20 +273,20 @@ router.patch('/profile', async (req, res) => {
       }
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && req.body.serviceIds === undefined) {
       return res.status(400).json({ message: 'No valid fields to update' });
     }
 
-    const updated = await Staff.findByIdAndUpdate(
-      req.staffProfile._id,
-      updates,
-      { new: true, runValidators: true }
-    );
+    const updated = Object.keys(updates).length > 0
+      ? await Staff.findByIdAndUpdate(req.staffProfile._id, updates, { new: true, runValidators: true })
+      : req.staffProfile;
+
+    await syncStaffServices(updated, req.body.serviceIds);
 
     res.json(updated);
   } catch (error) {
     console.error('Staff update profile error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 });
 

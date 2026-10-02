@@ -6,6 +6,14 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
+const authCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+});
+
 // Generate JWT
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -56,6 +64,7 @@ router.post(
       });
 
       const token = generateToken(user._id);
+      res.cookie('auth_token', token, authCookieOptions());
 
       res.status(201).json({
         token,
@@ -97,6 +106,7 @@ router.post(
       }
 
       const token = generateToken(user._id);
+      res.cookie('auth_token', token, authCookieOptions());
 
       res.json({
         token,
@@ -108,6 +118,14 @@ router.post(
     }
   }
 );
+
+// @route   POST /api/auth/logout
+// @desc    Clear the API authentication cookie
+router.post('/logout', (req, res) => {
+  const { maxAge, ...options } = authCookieOptions();
+  res.clearCookie('auth_token', options);
+  res.json({ message: 'Logged out' });
+});
 
 // @route   GET /api/auth/me
 // @desc    Get current user from JWT

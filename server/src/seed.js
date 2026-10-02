@@ -1,11 +1,32 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const { randomBytes } = require('crypto');
 const User = require('./models/User');
 const Staff = require('./models/Staff');
 const Service = require('./models/Service');
 const Appointment = require('./models/Appointment');
 
 dotenv.config();
+
+if (process.env.NODE_ENV === 'production') {
+  throw new Error('Seeding is disabled in production');
+}
+
+if (process.env.ALLOW_SEED !== 'true') {
+  throw new Error('Set ALLOW_SEED=true to run the destructive development seed');
+}
+
+const requiredSeedEnv = ['MONGODB_URI', 'SEED_ADMIN_NAME', 'SEED_ADMIN_EMAIL', 'SEED_ADMIN_PASSWORD'];
+const missingSeedEnv = requiredSeedEnv.filter((name) => !process.env[name]);
+if (missingSeedEnv.length > 0) {
+  throw new Error(`Missing required seed environment variables: ${missingSeedEnv.join(', ')}`);
+}
+
+if (process.env.SEED_ADMIN_PASSWORD.length < 12) {
+  throw new Error('SEED_ADMIN_PASSWORD must be at least 12 characters');
+}
+
+const demoPassword = process.env.SEED_DEMO_PASSWORD || randomBytes(24).toString('base64url');
 
 const seed = async () => {
   try {
@@ -21,19 +42,19 @@ const seed = async () => {
 
     // 1. Create admin user
     const admin = await User.create({
-      name: 'Admin',
-      email: 'admin@salon.com',
-      password: 'admin123',
-      phone: '555-0100',
+      name: process.env.SEED_ADMIN_NAME,
+      email: process.env.SEED_ADMIN_EMAIL,
+      password: process.env.SEED_ADMIN_PASSWORD,
+      phone: process.env.SEED_ADMIN_PHONE || '',
       role: 'admin',
     });
-    console.log('✅ Admin user created (admin@salon.com / admin123)');
+    console.log('Admin user created');
 
     // Create sample customer
     const customer = await User.create({
       name: 'Jane Doe',
       email: 'jane@example.com',
-      password: 'password123',
+      password: demoPassword,
       phone: '555-0101',
       role: 'customer',
     });
@@ -41,7 +62,7 @@ const seed = async () => {
     const customer2 = await User.create({
       name: 'Sarah Johnson',
       email: 'sarah@example.com',
-      password: 'password123',
+      password: demoPassword,
       phone: '555-0102',
       role: 'customer',
     });
@@ -49,7 +70,7 @@ const seed = async () => {
     const staffUser = await User.create({
       name: 'Sophia Martinez',
       email: 'sophia@luxesalon.com',
-      password: 'staff123',
+      password: demoPassword,
       phone: '555-0201',
       role: 'staff',
       mustChangePassword: true,
@@ -246,11 +267,7 @@ const seed = async () => {
     console.log('✅ 5 sample appointments created');
 
     console.log('\n🎉 Seed completed successfully!');
-    console.log('\nLogin credentials:');
-    console.log('  Admin:    admin@salon.com / admin123');
-    console.log('  Customer: jane@example.com / password123');
-    console.log('  Customer: sarah@example.com / password123');
-    console.log('  Staff:    sophia@luxesalon.com / staff123 (password change required)');
+    console.log('No default login credentials were created. Demo passwords are random unless SEED_DEMO_PASSWORD is supplied.');
 
     process.exit(0);
   } catch (error) {

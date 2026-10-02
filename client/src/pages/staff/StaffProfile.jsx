@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getStaffProfile, updateStaffProfile } from '../../api';
-import { Loader2, XCircle, Save, UserCircle, Clock, Plus, X } from 'lucide-react';
+import { getStaffProfile, getServices, updateStaffProfile, uploadStaffProfilePhoto } from '../../api';
+import { Loader2, XCircle, Save, UserCircle, Clock, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -9,44 +9,47 @@ const StaffProfile = () => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [error, setError] = useState('');
 
   // Editable fields
   const [bio, setBio] = useState('');
-  const [specialties, setSpecialties] = useState([]);
+  const [services, setServices] = useState([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState([]);
+  const [initialServiceIds, setInitialServiceIds] = useState([]);
   const [photo, setPhoto] = useState('');
-  const [newSpecialty, setNewSpecialty] = useState('');
 
   useEffect(() => {
-    getStaffProfile()
-      .then((res) => {
-        const p = res.data;
+    Promise.all([getStaffProfile(), getServices()])
+      .then(([profileRes, servicesRes]) => {
+        const p = profileRes.data;
+        const availableServices = servicesRes.data;
+        const assignedIds = availableServices
+          .filter((service) => service.assignedStaff?.some((member) => (member._id || member) === p._id))
+          .map((service) => service._id);
         setProfile(p);
         setBio(p.bio || '');
-        setSpecialties(p.specialties || []);
+        setServices(availableServices);
+        setSelectedServiceIds(assignedIds);
+        setInitialServiceIds(assignedIds);
         setPhoto(p.photo || '');
       })
       .catch((err) => setError(err.response?.data?.message || 'Failed to load profile'))
       .finally(() => setLoading(false));
   }, []);
 
-  const handleAddSpecialty = () => {
-    const trimmed = newSpecialty.trim();
-    if (trimmed && !specialties.includes(trimmed)) {
-      setSpecialties([...specialties, trimmed]);
-      setNewSpecialty('');
-    }
-  };
-
-  const handleRemoveSpecialty = (idx) => {
-    setSpecialties(specialties.filter((_, i) => i !== idx));
+  const toggleService = (id) => {
+    setSelectedServiceIds((selected) =>
+      selected.includes(id) ? selected.filter((serviceId) => serviceId !== id) : [...selected, id]
+    );
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await updateStaffProfile({ bio, specialties, photo });
+      const res = await updateStaffProfile({ bio, serviceIds: selectedServiceIds });
       setProfile(res.data);
+      setInitialServiceIds(selectedServiceIds);
       toast.success('Profile updated successfully');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update profile');
@@ -55,12 +58,40 @@ const StaffProfile = () => {
     }
   };
 
+  const handlePhotoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Please select a JPG, PNG, or WebP image');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Photo must be 5MB or smaller');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      const res = await uploadStaffProfilePhoto(formData);
+      setProfile(res.data);
+      setPhoto(res.data.photo || '');
+      toast.success('Profile photo uploaded');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to upload profile photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   // Detect changes
   const hasChanges =
     profile &&
     (bio !== (profile.bio || '') ||
-      photo !== (profile.photo || '') ||
-      JSON.stringify(specialties) !== JSON.stringify(profile.specialties || []));
+      JSON.stringify(selectedServiceIds) !== JSON.stringify(initialServiceIds));
 
   if (loading) {
     return (
@@ -91,7 +122,7 @@ const StaffProfile = () => {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
-          <p className="text-gray-500 text-sm mt-1">Edit your bio, specialties, and avatar</p>
+          <p className="text-gray-500 text-sm mt-1">Edit your bio, services, and avatar</p>
         </div>
         {hasChanges && (
           <button
@@ -130,19 +161,23 @@ const StaffProfile = () => {
               )}
             </div>
 
-            {/* Avatar URL */}
+            {/* Avatar upload */}
             <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Avatar URL
+                Profile photo
               </label>
-              <input
-                type="url"
-                className="input-field text-sm"
-                value={photo}
-                onChange={(e) => setPhoto(e.target.value)}
-                placeholder="https://example.com/photo.jpg"
-              />
-              <p className="text-xs text-gray-400 mt-1">Paste a link to your profile photo</p>
+              <label className="btn-secondary w-full flex items-center justify-center gap-2 cursor-pointer">
+                {uploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {uploadingPhoto ? 'Uploading...' : 'Upload photo'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  onChange={handlePhotoUpload}
+                  disabled={uploadingPhoto}
+                />
+              </label>
+              <p className="text-xs text-gray-400 mt-1">JPG, PNG, or WebP. Maximum 5MB.</p>
             </div>
           </div>
         </div>
@@ -165,47 +200,30 @@ const StaffProfile = () => {
             <p className="text-xs text-gray-400 mt-1 text-right">{bio.length}/500</p>
           </div>
 
-          {/* Specialties */}
+          {/* Services */}
           <div className="card p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Specialties</h3>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {specialties.length === 0 ? (
-                <p className="text-sm text-gray-400">No specialties added yet</p>
-              ) : (
-                specialties.map((s, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 text-primary-700 rounded-full text-sm font-medium"
+            <h3 className="font-semibold text-gray-900 mb-2">Services</h3>
+            <p className="text-sm text-gray-500 mb-4">Select the services you provide.</p>
+            {services.length === 0 ? (
+              <p className="text-sm text-gray-400">No active services are available.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {services.map((service) => (
+                  <button
+                    key={service._id}
+                    type="button"
+                    onClick={() => toggleService(service._id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                      selectedServiceIds.includes(service._id)
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-primary-300'
+                    }`}
                   >
-                    {s}
-                    <button
-                      onClick={() => handleRemoveSpecialty(i)}
-                      className="hover:text-primary-900 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </span>
-                ))
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                className="input-field text-sm flex-1"
-                value={newSpecialty}
-                onChange={(e) => setNewSpecialty(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSpecialty())}
-                placeholder="Add a specialty..."
-              />
-              <button
-                onClick={handleAddSpecialty}
-                disabled={!newSpecialty.trim()}
-                className="btn-secondary flex items-center gap-1.5 !px-4 disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                Add
-              </button>
-            </div>
+                    {service.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Working Hours (read-only) */}

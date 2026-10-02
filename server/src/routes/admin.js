@@ -3,6 +3,7 @@ const Appointment = require('../models/Appointment');
 const User = require('../models/User');
 const Service = require('../models/Service');
 const Staff = require('../models/Staff');
+const { syncStaffServices } = require('../services/staffServices');
 const { body, validationResult } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth');
 
@@ -166,6 +167,7 @@ router.post(
             .map((field) => [field, profileData[field]])
         );
         staff = await Staff.create({ ...newProfile, user: createdUser._id });
+        await syncStaffServices(staff, profileData.serviceIds);
       }
 
       res.status(201).json({
@@ -186,7 +188,7 @@ router.post(
       if (error.code === 11000) {
         return res.status(400).json({ message: 'A user or staff account with these details already exists' });
       }
-      res.status(500).json({ message: 'Server error' });
+      res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
     }
   }
 );

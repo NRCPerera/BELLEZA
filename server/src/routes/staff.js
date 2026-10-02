@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Staff = require('../models/Staff');
 const PortfolioPhoto = require('../models/PortfolioPhoto');
+const { syncStaffServices } = require('../services/staffServices');
 const { authenticate, authorize } = require('../middleware/auth');
 
 let cloudinary;
@@ -120,6 +121,7 @@ router.post(
       }
 
       const staff = await Staff.create(req.body);
+      await syncStaffServices(staff, req.body.serviceIds);
       res.status(201).json(staff);
     } catch (error) {
       console.error('Create staff error:', error);
@@ -133,7 +135,8 @@ router.post(
 // @access  Admin
 router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const staff = await Staff.findByIdAndUpdate(req.params.id, req.body, {
+    const { serviceIds, ...staffUpdates } = req.body;
+    const staff = await Staff.findByIdAndUpdate(req.params.id, staffUpdates, {
       new: true,
       runValidators: true,
     });
@@ -142,10 +145,11 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
       return res.status(404).json({ message: 'Staff member not found' });
     }
 
+    await syncStaffServices(staff, serviceIds);
     res.json(staff);
   } catch (error) {
     console.error('Update staff error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 });
 

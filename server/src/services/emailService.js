@@ -12,10 +12,35 @@ const createTransporter = () => {
   });
 };
 
+const sendWithResend = async (mailOptions) => {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: mailOptions.from,
+      to: [mailOptions.to],
+      subject: mailOptions.subject,
+      html: mailOptions.html,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Resend request failed (${response.status})`);
+};
+
+// Resend is the production default. SMTP remains available for local or legacy deployments.
+const sendEmail = async (mailOptions) => {
+  if (process.env.RESEND_API_KEY) return sendWithResend(mailOptions);
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    return createTransporter().sendMail(mailOptions);
+  }
+  console.warn('Email not sent: no email provider is configured');
+};
+
 const sendBookingConfirmation = async (appointment) => {
   try {
-    const transporter = createTransporter();
-
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: appointment.customerEmail,
@@ -78,7 +103,7 @@ const sendBookingConfirmation = async (appointment) => {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
     console.log(`Booking confirmation email sent to ${appointment.customerEmail}`);
   } catch (error) {
     console.error('Error sending booking confirmation email:', error.message);
@@ -88,8 +113,6 @@ const sendBookingConfirmation = async (appointment) => {
 
 const sendStatusUpdateEmail = async (appointment, newStatus) => {
   try {
-    const transporter = createTransporter();
-
     const statusMessages = {
       confirmed: {
         subject: 'Your Luxe Salon appointment is confirmed! ✅',
@@ -153,7 +176,7 @@ const sendStatusUpdateEmail = async (appointment, newStatus) => {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
     console.log(`Status update email (${newStatus}) sent to ${appointment.customerEmail}`);
   } catch (error) {
     console.error('Error sending status update email:', error.message);

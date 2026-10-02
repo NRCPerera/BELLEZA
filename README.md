@@ -50,17 +50,14 @@ Cloudinary credentials are server-only: do not add them to a `VITE_*` variable o
 
 > **Note:** Email sending is optional. If SMTP credentials are not configured, the app will still work — email sending will fail silently.
 
-### 3. Seed the database
+### 3. Optional development seed
 
 ```bash
 cd server
 npm run seed
 ```
 
-This creates:
-- **Admin user:** `admin@salon.com` / `admin123`
-- **Customer users:** `jane@example.com` / `password123`, `sarah@example.com` / `password123`
-- 4 staff members, 6 services (Hair, Skin, Nails), and 5 sample appointments
+Seeding deletes all application data and is deliberately disabled in production. In a development-only server `.env`, set `ALLOW_SEED=true` and provide `SEED_ADMIN_NAME`, `SEED_ADMIN_EMAIL`, and a unique `SEED_ADMIN_PASSWORD` of at least 12 characters. No default credentials are included.
 
 ### 4. Start both servers
 
@@ -132,3 +129,22 @@ salon_proj/
 - Role-based access control (customer/admin)
 - Staff portfolio uploads: magic-byte validation, 5MB JPG/PNG/WebP limit, EXIF/GPS stripping, Cloudinary storage, upload throttling, and cleanup on staff deactivation
 - Input validation with express-validator
+
+## Deploy to Render, MongoDB Atlas, and Cloudinary
+
+Use two Render services from this repository.
+
+| Service | Render type | Root directory | Build command | Start/publish setting |
+| --- | --- | --- | --- | --- |
+| Client | Static Site | `client` | `npm ci && npm run build` | Publish directory: `dist` |
+| API | Web Service | `server` | `npm ci` | Start command: `npm start` |
+
+Set the API health-check path to `/health`. Render supplies `PORT`; do not set a fixed production port.
+
+For the API, configure `NODE_ENV=production`, `MONGODB_URI`, a long random `JWT_SECRET`, `CLIENT_URL=https://www.example.com`, `COOKIE_DOMAIN=.example.com`, `COOKIE_SAME_SITE=lax`, Cloudinary credentials, `EMAIL_FROM`, and `RESEND_API_KEY`. SMTP values are optional and only used when Resend is not configured. For the static site, set `VITE_API_URL=https://api.example.com/api` before each build.
+
+In Atlas, create a database user with only the needed database permissions, then place its SRV connection string in `MONGODB_URI`. In Atlas Network Access, allow Render egress IP ranges where your plan supports fixed egress; otherwise temporarily allow `0.0.0.0/0` with a strong database password and least-privilege user, then tighten access when fixed egress is available.
+
+Add `www.example.com` as the static site's custom domain and `api.example.com` as the web service's custom domain in Render. At your DNS provider, create the CNAME records Render provides for both names, wait for verification/TLS provisioning, then update `CLIENT_URL`, `COOKIE_DOMAIN`, and `VITE_API_URL` to the final domains. The client `public/_redirects` file rewrites unknown paths to `index.html`, so React Router works on refresh.
+
+Create a GitHub repository secret named `MONGODB_BACKUP_URI` with a backup-capable Atlas connection string. The scheduled [MongoDB backup workflow](.github/workflows/mongodb-backup.yml) runs `mongodump` daily and retains its compressed GitHub Actions artifact for 30 days. For longer retention or disaster recovery requirements, copy the archive to an access-controlled object-storage bucket.

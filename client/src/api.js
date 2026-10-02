@@ -4,6 +4,7 @@ const baseURL = import.meta.env.VITE_API_URL || '/api';
 
 const API = axios.create({
   baseURL,
+  withCredentials: true,
 });
 
 // Attach JWT token to every request
@@ -76,6 +77,10 @@ export const updateStaffAppointmentStatus = (id, status) =>
   API.patch(`/staff/me/appointments/${id}/status`, { status });
 export const getStaffProfile = () => API.get('/staff/me/profile');
 export const updateStaffProfile = (data) => API.patch('/staff/me/profile', data);
+export const uploadStaffProfilePhoto = (formData) =>
+  API.post('/staff/me/profile/photo', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
 
 // Portfolio - Staff
 export const getMyPortfolio = () => API.get('/staff/me/portfolio');

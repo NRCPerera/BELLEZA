@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getAllStaff, createStaff, updateStaff, deleteStaff } from '../../api';
+import { getAllStaff, getAllServices, createStaffAccount, updateStaff, deleteStaff } from '../../api';
 import { useForm } from 'react-hook-form';
 import Modal from '../../components/ui/Modal';
 import { Plus, Edit2, Trash2, Loader2 } from 'lucide-react';
@@ -13,21 +13,30 @@ const AdminStaff = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [services, setServices] = useState([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState([]);
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
   const [workingHours, setWorkingHours] = useState(
     DAYS.slice(0, 5).map(d => ({ day: d, start: '09:00', end: '18:00', enabled: true }))
       .concat([ { day: 'Saturday', start: '10:00', end: '16:00', enabled: true }, { day: 'Sunday', start: '', end: '', enabled: false } ])
   );
 
-  useEffect(() => { fetchStaff(); }, []);
+  useEffect(() => { fetchData(); }, []);
 
-  const fetchStaff = () => {
-    getAllStaff().then(res => setStaffList(res.data)).catch(console.error).finally(() => setLoading(false));
+  const fetchData = () => {
+    Promise.all([getAllStaff(), getAllServices()])
+      .then(([staffRes, servicesRes]) => {
+        setStaffList(staffRes.data);
+        setServices(servicesRes.data);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   };
 
   const openAdd = () => {
     setEditing(null);
-    reset({ name: '', email: '', phone: '', bio: '', specialties: '' });
+    reset({ name: '', email: '', phone: '', bio: '', tempPassword: '' });
+    setSelectedServiceIds([]);
     setWorkingHours(DAYS.slice(0, 5).map(d => ({ day: d, start: '09:00', end: '18:00', enabled: true }))
       .concat([ { day: 'Saturday', start: '10:00', end: '16:00', enabled: true }, { day: 'Sunday', start: '', end: '', enabled: false } ]));
     setModalOpen(true);
@@ -35,7 +44,12 @@ const AdminStaff = () => {
 
   const openEdit = (staff) => {
     setEditing(staff);
-    reset({ name: staff.name, email: staff.email, phone: staff.phone, bio: staff.bio, specialties: staff.specialties?.join(', ') });
+    reset({ name: staff.name, email: staff.email, phone: staff.phone, bio: staff.bio });
+    setSelectedServiceIds(
+      services
+        .filter((service) => service.assignedStaff?.some((member) => (member._id || member) === staff._id))
+        .map((service) => service._id)
+    );
     const wh = DAYS.map(d => {
       const existing = staff.workingHours?.find(w => w.day === d);
       return existing ? { ...existing, enabled: true } : { day: d, start: '', end: '', enabled: false };
@@ -48,7 +62,7 @@ const AdminStaff = () => {
     setSubmitting(true);
     const payload = {
       ...data,
-      specialties: data.specialties ? data.specialties.split(',').map(s => s.trim()).filter(Boolean) : [],
+      serviceIds: selectedServiceIds,
       workingHours: workingHours.filter(w => w.enabled).map(({ day, start, end }) => ({ day, start, end })),
     };
     try {
@@ -56,11 +70,12 @@ const AdminStaff = () => {
         await updateStaff(editing._id, payload);
         toast.success('Staff updated');
       } else {
-        await createStaff(payload);
-        toast.success('Staff added');
+        const { tempPassword, ...staff } = payload;
+        await createStaffAccount({ staff, tempPassword });
+        toast.success('Staff account created');
       }
       setModalOpen(false);
-      fetchStaff();
+      fetchData();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed');
     } finally {
@@ -73,7 +88,7 @@ const AdminStaff = () => {
     try {
       await deleteStaff(id);
       toast.success('Staff deactivated');
-      fetchStaff();
+      fetchData();
     } catch (err) {
       toast.error('Failed');
     }
@@ -81,6 +96,12 @@ const AdminStaff = () => {
 
   const toggleDay = (i) => {
     setWorkingHours(wh => wh.map((w, idx) => idx === i ? { ...w, enabled: !w.enabled } : w));
+  };
+
+  const toggleService = (id) => {
+    setSelectedServiceIds((selected) =>
+      selected.includes(id) ? selected.filter((serviceId) => serviceId !== id) : [...selected, id]
+    );
   };
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 text-primary-600 animate-spin" /></div>;
@@ -105,7 +126,7 @@ const AdminStaff = () => {
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Email</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Phone</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Specialties</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Services</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr></thead>
@@ -140,8 +161,46 @@ const AdminStaff = () => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Phone</label><input className="input-field" {...register('phone')} /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Specialties</label><input className="input-field" placeholder="Comma separated" {...register('specialties')} /></div>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Services</label>
+            {services.filter((service) => service.isActive).length === 0 ? (
+              <p className="text-sm text-gray-500">No active services available. Create a service first.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {services.filter((service) => service.isActive).map((service) => (
+                  <button
+                    key={service._id}
+                    type="button"
+                    onClick={() => toggleService(service._id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      selectedServiceIds.includes(service._id)
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-primary-300'
+                    }`}
+                  >
+                    {service.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {!editing && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Temporary password *</label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                className="input-field"
+                {...register('tempPassword', {
+                  required: 'A temporary password is required',
+                  minLength: { value: 6, message: 'Must be at least 6 characters' },
+                })}
+              />
+              {errors.tempPassword && <p className="text-red-500 text-xs mt-1">{errors.tempPassword.message}</p>}
+              <p className="text-gray-500 text-xs mt-1">The staff member will be asked to change this password after signing in.</p>
+            </div>
+          )}
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Bio</label><textarea className="input-field" rows="2" {...register('bio')} /></div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Working Hours</label>

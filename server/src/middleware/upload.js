@@ -55,17 +55,29 @@ const portfolioFiles = (req, res, next) => {
   });
 };
 
+// Single profile-avatar upload with the same size limits and friendly errors.
+const avatarFile = (req, res, next) => {
+  upload.single('photo')(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ message: 'File too large. Maximum size is 5MB.' });
+    }
+    return res.status(400).json({ message: 'Upload error: ' + err.message });
+  });
+};
+
 /**
  * Middleware to validate uploaded files by magic bytes after multer processes them.
  * Attach to routes AFTER multer middleware.
  */
 const validateMagicBytes = (req, res, next) => {
-  if (!req.files || req.files.length === 0) {
+  const files = req.files || (req.file ? [req.file] : []);
+  if (files.length === 0) {
     return res.status(400).json({ message: 'No files uploaded' });
   }
 
   const invalidFiles = [];
-  for (const file of req.files) {
+  for (const file of files) {
     const detectedType = detectFileType(file.buffer);
     if (!detectedType) {
       invalidFiles.push(file.originalname);
@@ -103,4 +115,4 @@ const handleMulterError = (err, req, res, next) => {
   next(err);
 };
 
-module.exports = { upload, portfolioFiles, validateMagicBytes, handleMulterError, detectFileType };
+module.exports = { upload, portfolioFiles, avatarFile, validateMagicBytes, handleMulterError, detectFileType };

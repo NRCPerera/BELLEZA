@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getServices, getStaff, getAvailableSlots, createAppointment } from '../../api';
 import { Check, ChevronRight, Clock, CalendarDays, User, Sparkles, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -9,6 +9,8 @@ const steps = ['Select Service', 'Choose Stylist', 'Pick Date & Time', 'Confirm 
 
 const BookingPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedStaffId = searchParams.get('staffId');
   const [step, setStep] = useState(0);
   const [services, setServices] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -32,10 +34,19 @@ const BookingPage = () => {
       .then(([sRes, stRes]) => {
         setServices(sRes.data);
         setStaff(stRes.data);
+        const requestedStaff = stRes.data.find((member) => member._id === requestedStaffId);
+        if (requestedStaff) {
+          setSelected((current) => ({ ...current, staff: requestedStaff }));
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [requestedStaffId]);
+
+  const requestedStaff = staff.find((member) => member._id === requestedStaffId);
+  const availableServices = requestedStaff
+    ? services.filter((service) => service.assignedStaff?.some((member) => (member._id || member) === requestedStaff._id))
+    : services;
 
   // Filter staff based on selected service
   const filteredStaff = selected.service
@@ -142,10 +153,13 @@ const BookingPage = () => {
           <div className="animate-fade-in">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Choose a Service</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {services.map((service) => (
+              {availableServices.map((service) => (
                 <button
                   key={service._id}
-                  onClick={() => { setSelected(s => ({ ...s, service, staff: null, time: '' })); setStep(1); }}
+                  onClick={() => {
+                    setSelected((current) => ({ ...current, service, staff: requestedStaff || null, time: '' }));
+                    setStep(requestedStaff ? 2 : 1);
+                  }}
                   className={`card p-5 text-left hover:-translate-y-0.5 transition-all duration-200 ${
                     selected.service?._id === service._id ? 'ring-2 ring-primary-600 border-primary-200' : ''
                   }`}
@@ -208,8 +222,8 @@ const BookingPage = () => {
         {/* Step 3: Pick Date & Time */}
         {step === 2 && (
           <div className="animate-fade-in">
-            <button onClick={() => setStep(1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 mb-4">
-              <ArrowLeft className="w-4 h-4" /> Back to staff
+            <button onClick={() => setStep(requestedStaff ? 0 : 1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 mb-4">
+              <ArrowLeft className="w-4 h-4" /> {requestedStaff ? 'Back to services' : 'Back to staff'}
             </button>
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Pick Date & Time</h2>
             <div className="card p-6">
