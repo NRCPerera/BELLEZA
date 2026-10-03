@@ -73,7 +73,7 @@ const AdminDashboard = () => {
       {appointments.length ? <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-sm">
         <thead className="bg-background text-left text-[11px] font-bold uppercase tracking-wider text-ink-500"><tr><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Service</th><th className="px-5 py-3">Staff</th><th className="px-5 py-3">When</th><th className="px-5 py-3">Status</th></tr></thead>
         <tbody className="divide-y divide-ink-100">{appointments.slice(0, 6).map(a => <tr key={a._id} className="hover:bg-primary-50/30">
-          <td className="px-5 py-4 font-semibold text-ink-900">{a.customer?.name}</td>
+          <td className="px-5 py-4 font-semibold text-ink-900">{((a.guestName || a.customer?.name) || '—')}</td>
           <td className="px-5 py-4 text-ink-500">{a.service?.name}</td>
           <td className="px-5 py-4 text-ink-500">{a.staff?.name}</td>
           <td className="px-5 py-4 text-ink-500">{new Date(a.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {a.startTime}</td>

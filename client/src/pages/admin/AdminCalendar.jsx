@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Calendar as BigCalendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { getAppointments, updateAppointmentStatus } from '../../api';
+import { getAppointments, updateAppointmentStatus, getSlotBlocks } from '../../api';
 import Modal from '../../components/ui/Modal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { Loader2 } from 'lucide-react';
@@ -12,6 +12,7 @@ const localizer = momentLocalizer(moment);
 
 const AdminCalendar = () => {
   const [appointments, setAppointments] = useState([]);
+  const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedApt, setSelectedApt] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -21,24 +22,44 @@ const AdminCalendar = () => {
   useEffect(() => { fetchAppointments(); }, []);
 
   const fetchAppointments = () => {
-    getAppointments()
-      .then((res) => setAppointments(res.data))
+    Promise.all([
+      getAppointments().then((res) => setAppointments(res.data)),
+      getSlotBlocks().then((res) => setBlocks(res.data)),
+    ])
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
-  const events = appointments.map((apt) => {
-    const dateStr = new Date(apt.date).toISOString().split('T')[0];
+  const blockEvents = blocks.map((b) => {
+    const dateStr = new Date(b.date).toISOString().split('T')[0];
     return {
-      id: apt._id,
-      title: `${apt.customer?.name} - ${apt.service?.name}`,
-      start: new Date(dateStr + 'T' + apt.startTime + ':00'),
-      end: new Date(dateStr + 'T' + apt.endTime + ':00'),
-      resource: apt,
+      id: `block-${b._id}`,
+      title: `Paused: ${b.staff ? b.staff.name : 'Whole salon'}`,
+      start: new Date(dateStr + 'T' + b.startTime + ':00'),
+      end: new Date(dateStr + 'T' + b.endTime + ':00'),
+      resource: { isBlock: true, block: b },
     };
   });
 
+  const events = [
+    ...appointments.map((apt) => {
+      const dateStr = new Date(apt.date).toISOString().split('T')[0];
+      return {
+        id: apt._id,
+        title: `${((apt.guestName || apt.customer?.name) || '—')} - ${apt.service?.name}`,
+        start: new Date(dateStr + 'T' + apt.startTime + ':00'),
+        end: new Date(dateStr + 'T' + apt.endTime + ':00'),
+        resource: apt,
+      };
+    }),
+    ...blockEvents,
+  ];
+
   const handleSelectEvent = (event) => {
+    if (event.resource?.isBlock) {
+      toast(`Online booking paused: ${event.resource.block.startTime}–${event.resource.block.endTime}. Manage in Appointments.`);
+      return;
+    }
     setSelectedApt(event.resource);
     setModalOpen(true);
   };
@@ -83,13 +104,21 @@ const AdminCalendar = () => {
           max={new Date(2020, 0, 1, 20, 0)}
           step={30}
           timeslots={1}
-          eventPropGetter={() => ({
-            style: {
-              backgroundColor: 'var(--color-primary-700)',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '12px',
-            },
+          eventPropGetter={(event) => ({
+            style: event.resource?.isBlock
+              ? {
+                backgroundColor: '#d6d3d1',
+                color: '#57534e',
+                borderRadius: '6px',
+                border: '1px dashed #a8a29e',
+                fontSize: '12px',
+              }
+              : {
+                backgroundColor: 'var(--color-primary-700)',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '12px',
+              },
           })}
         />
       </div>
@@ -99,8 +128,8 @@ const AdminCalendar = () => {
         {selectedApt && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div><p className="text-xs text-ink-500">Customer</p><p className="font-medium text-ink-900">{selectedApt.customer?.name}</p></div>
-              <div><p className="text-xs text-ink-500">Email</p><p className="font-medium text-sm text-ink-700">{selectedApt.customer?.email}</p></div>
+              <div><p className="text-xs text-ink-500">Customer</p><p className="font-medium text-ink-900">{((selectedApt.guestName || selectedApt.customer?.name) || '—')}</p></div>
+              <div><p className="text-xs text-ink-500">Email</p><p className="font-medium text-sm text-ink-700">{(selectedApt.guestEmail || selectedApt.customer?.email)}</p></div>
               <div><p className="text-xs text-ink-500">Service</p><p className="font-medium text-ink-900">{selectedApt.service?.name}</p></div>
               <div><p className="text-xs text-ink-500">Staff</p><p className="font-medium text-ink-900">{selectedApt.staff?.name}</p></div>
               <div><p className="text-xs text-ink-500">Date</p><p className="font-medium text-ink-900">{new Date(selectedApt.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p></div>

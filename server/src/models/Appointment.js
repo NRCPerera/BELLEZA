@@ -4,7 +4,31 @@ const appointmentSchema = new mongoose.Schema({
   customer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Customer is required'],
+    required: false,
+  },
+  // Guest booking details (customer login removed - phone is the identity)
+  guestName: {
+    type: String,
+    trim: true,
+    default: '',
+    maxlength: 100,
+  },
+  guestPhone: {
+    type: String,
+    trim: true,
+    default: '',
+    maxlength: 20,
+  },
+  guestEmail: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    default: '',
+  },
+  bookingRef: {
+    type: String,
+    trim: true,
+    uppercase: true,
   },
   staff: {
     type: mongoose.Schema.Types.ObjectId,
@@ -19,6 +43,12 @@ const appointmentSchema = new mongoose.Schema({
   date: {
     type: Date,
     required: [true, 'Date is required'],
+  },
+  // Calendar-day key YYYY-MM-DD (Asia/Colombo) — avoids UTC midnight-shift bugs
+  dayKey: {
+    type: String,
+    required: [true, 'Day is required'],
+    match: [/^\d{4}-\d{2}-\d{2}$/, 'Day must be YYYY-MM-DD'],
   },
   startTime: {
     type: String,
@@ -48,8 +78,20 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // Index for efficient queries
+appointmentSchema.index({ staff: 1, dayKey: 1 });
 appointmentSchema.index({ staff: 1, date: 1 });
 appointmentSchema.index({ customer: 1 });
 appointmentSchema.index({ status: 1 });
+appointmentSchema.index({ guestPhone: 1 });
+appointmentSchema.index({ bookingRef: 1 }, { unique: true, sparse: true });
+
+// Auto-fill dayKey from date for legacy docs / direct creates
+appointmentSchema.pre('validate', function (next) {
+  if (!this.dayKey && this.date) {
+    const d = new Date(this.date);
+    this.dayKey = d.toISOString().split('T')[0];
+  }
+  next();
+});
 
 module.exports = mongoose.model('Appointment', appointmentSchema);

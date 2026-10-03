@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getAppointments, updateAppointmentStatus, cancelAppointment, getAllStaff } from '../../api';
+import { getAppointments, updateAppointmentStatus, cancelAppointment, getAllStaff, getSlotBlocks, createSlotBlock, deleteSlotBlock } from '../../api';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
-import { Loader2, Filter, Eye, Search, X as XIcon, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { Loader2, Filter, Eye, Search, X as XIcon, ChevronLeft, ChevronRight, AlertCircle, PauseCircle, PlayCircle } from 'lucide-react';
 import EmptyState from '../../components/ui/EmptyState';
 import toast from 'react-hot-toast';
+
+const todayStr = () => new Date().toISOString().split('T')[0];
 
 const AdminAppointments = () => {
   const [appointments, setAppointments] = useState([]);
@@ -17,10 +19,25 @@ const AdminAppointments = () => {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
+  const [blocks, setBlocks] = useState([]);
+  const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [blockSaving, setBlockSaving] = useState(false);
+  const [blockForm, setBlockForm] = useState({ staffId: '', date: todayStr(), startTime: '', endTime: '', reason: '' });
 
   useEffect(() => {
     Promise.all([fetchAppointments(), getAllStaff().then(res => setStaffList(res.data))]).finally(() => setLoading(false));
   }, []);
+
+  const fetchBlocks = async (date) => {
+    try {
+      const res = await getSlotBlocks(date ? { date } : {});
+      setBlocks(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => { fetchBlocks(filters.date || todayStr()); }, [filters.date]);
 
   const fetchAppointments = async () => {
     try {
@@ -37,7 +54,7 @@ const AdminAppointments = () => {
 
   useEffect(() => { fetchAppointments(); }, [filters]);
   useEffect(() => setPage(1), [query, filters]);
-  const filteredAppointments = appointments.filter(a => `${a.customer?.name} ${a.service?.name} ${a.staff?.name}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredAppointments = appointments.filter(a => `${((a.guestName || a.customer?.name) || '—')} ${a.service?.name} ${a.staff?.name}`.toLowerCase().includes(query.toLowerCase()));
   const pageSize = 8; const totalPages = Math.max(1, Math.ceil(filteredAppointments.length / pageSize)); const displayedAppointments = filteredAppointments.slice((page - 1) * pageSize, page * pageSize);
 
   const handleStatusChange = async (id, status) => {
@@ -65,6 +82,42 @@ const AdminAppointments = () => {
     }
   };
 
+  const handleCreateBlock = async () => {
+    if (!blockForm.date || !blockForm.startTime || !blockForm.endTime) {
+      toast.error('Date, start and end time are required');
+      return;
+    }
+    setBlockSaving(true);
+    try {
+      await createSlotBlock({
+        staffId: blockForm.staffId || undefined,
+        date: blockForm.date,
+        startTime: blockForm.startTime,
+        endTime: blockForm.endTime,
+        reason: blockForm.reason || undefined,
+      });
+      toast.success('Online booking paused for this time');
+      setBlockModalOpen(false);
+      setBlockForm({ staffId: '', date: blockForm.date, startTime: '', endTime: '', reason: '' });
+      fetchBlocks(filters.date || todayStr());
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.response?.data?.errors?.[0]?.msg || 'Failed to pause booking');
+    } finally {
+      setBlockSaving(false);
+    }
+  };
+
+  const handleDeleteBlock = async (id) => {
+    if (!window.confirm('Resume online booking for this time?')) return;
+    try {
+      await deleteSlotBlock(id);
+      toast.success('Online booking resumed');
+      fetchBlocks(filters.date || todayStr());
+    } catch (err) {
+      toast.error('Failed to resume');
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 text-primary-700 animate-spin" /></div>;
 
   return (
@@ -74,6 +127,9 @@ const AdminAppointments = () => {
           <h1 className="text-2xl font-bold text-ink-900">Appointments</h1>
           <p className="text-ink-500 text-sm mt-1">Manage all salon appointments</p>
         </div>
+        <button onClick={() => { setBlockForm((f) => ({ ...f, date: filters.date || todayStr() })); setBlockModalOpen(true); }} className="btn-secondary text-sm flex items-center gap-2">
+          <PauseCircle className="w-4 h-4" /> Pause online booking
+        </button>
       </div>
 
       {/* Filters */}
@@ -101,6 +157,25 @@ const AdminAppointments = () => {
         </div>
       </div>
 
+      {/* Pause-blocks (walk-in rush) */}
+      {blocks.length > 0 && (
+        <div className="card p-4 mb-6 border-amber-200 bg-amber-50/50">
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-3">Online booking paused ({blocks.length})</p>
+          <div className="space-y-2">
+            {blocks.map((b) => (
+              <div key={b._id} className="flex flex-wrap items-center gap-2 text-sm bg-white rounded-xl px-3 py-2 border border-amber-100">
+                <span className="font-semibold text-ink-900">{b.staff ? b.staff.name : 'Whole salon'}</span>
+                <span className="text-ink-500">{new Date(b.date).toLocaleDateString()} {b.startTime}–{b.endTime}</span>
+                {b.reason && <span className="text-xs text-ink-500 truncate max-w-[220px]">· {b.reason}</span>}
+                <button onClick={() => handleDeleteBlock(b._id)} className="ml-auto text-xs font-bold text-green-700 hover:text-green-600 flex items-center gap-1">
+                  <PlayCircle className="w-3.5 h-3.5" /> Resume
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card overflow-hidden">
         {error ? <EmptyState icon={AlertCircle} title="Appointments unavailable" description={error} action={<button onClick={fetchAppointments} className="btn-secondary">Retry</button>} /> : displayedAppointments.length === 0 ? (
@@ -124,7 +199,7 @@ const AdminAppointments = () => {
                   <tr key={apt._id} className="hover:bg-primary-50 transition-colors">
                     <td className="px-5 py-3 text-ink-900">{new Date(apt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
                     <td className="px-5 py-3 text-ink-500">{apt.startTime} - {apt.endTime}</td>
-                    <td className="px-5 py-3 font-medium text-ink-900">{apt.customer?.name}</td>
+                    <td className="px-5 py-3 font-medium text-ink-900">{((apt.guestName || apt.customer?.name) || '—')}</td>
                     <td className="px-5 py-3 text-ink-500">{apt.service?.name}</td>
                     <td className="px-5 py-3 text-ink-500">{apt.staff?.name}</td>
                     <td className="px-5 py-3"><StatusBadge status={apt.status} /></td>
@@ -158,8 +233,10 @@ const AdminAppointments = () => {
         {selectedApt && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div><p className="text-xs text-ink-500">Customer</p><p className="font-medium text-ink-900">{selectedApt.customer?.name}</p></div>
-              <div><p className="text-xs text-ink-500">Email</p><p className="text-sm text-ink-700">{selectedApt.customer?.email}</p></div>
+              <div><p className="text-xs text-ink-500">Customer</p><p className="font-medium text-ink-900">{((selectedApt.guestName || selectedApt.customer?.name) || '—')}</p></div>
+              <div><p className="text-xs text-ink-500">Mobile (SMS)</p><p className="text-sm text-ink-700">{(selectedApt.guestPhone || selectedApt.customer?.phone) || '—'}</p></div>
+              <div><p className="text-xs text-ink-500">Booking Ref</p><p className="font-medium text-ink-900">{selectedApt.bookingRef || '—'}</p></div>
+              <div><p className="text-xs text-ink-500">Email</p><p className="text-sm text-ink-700">{(selectedApt.guestEmail || selectedApt.customer?.email) || '—'}</p></div>
               <div><p className="text-xs text-ink-500">Service</p><p className="font-medium text-ink-900">{selectedApt.service?.name}</p></div>
               <div><p className="text-xs text-ink-500">Price</p><p className="font-medium text-ink-900">${selectedApt.service?.price}</p></div>
               <div><p className="text-xs text-ink-500">Staff</p><p className="font-medium text-ink-900">{selectedApt.staff?.name}</p></div>
@@ -170,6 +247,41 @@ const AdminAppointments = () => {
             {selectedApt.notes && <div><p className="text-xs text-ink-500">Notes</p><p className="text-sm text-ink-700">{selectedApt.notes}</p></div>}
           </div>
         )}
+      </Modal>
+
+      {/* Pause online booking Modal */}
+      <Modal isOpen={blockModalOpen} onClose={() => setBlockModalOpen(false)} title="Pause online booking">
+        <div className="space-y-4">
+          <p className="text-sm text-ink-500">Use when busy with walk-in customers. Online slots in this range disappear; existing bookings stay.</p>
+          <div>
+            <label className="block text-sm font-medium text-ink-700 mb-1">Staff (empty = whole salon)</label>
+            <select value={blockForm.staffId} onChange={(e) => setBlockForm((f) => ({ ...f, staffId: e.target.value }))} className="input-field text-sm">
+              <option value="">Whole salon</option>
+              {staffList.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-ink-700 mb-1">Date *</label>
+            <input type="date" value={blockForm.date} min={todayStr()} onChange={(e) => setBlockForm((f) => ({ ...f, date: e.target.value }))} className="input-field text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-ink-700 mb-1">From *</label>
+              <input type="time" value={blockForm.startTime} onChange={(e) => setBlockForm((f) => ({ ...f, startTime: e.target.value }))} className="input-field text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-ink-700 mb-1">To *</label>
+              <input type="time" value={blockForm.endTime} onChange={(e) => setBlockForm((f) => ({ ...f, endTime: e.target.value }))} className="input-field text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-ink-700 mb-1">Reason</label>
+            <input value={blockForm.reason} onChange={(e) => setBlockForm((f) => ({ ...f, reason: e.target.value }))} placeholder="Busy with walk-in customers" className="input-field text-sm" />
+          </div>
+          <button onClick={handleCreateBlock} disabled={blockSaving} className="btn-primary w-full">
+            {blockSaving ? 'Pausing...' : 'Pause online booking'}
+          </button>
+        </div>
       </Modal>
     </div>
   );

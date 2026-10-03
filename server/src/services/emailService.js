@@ -30,6 +30,19 @@ const sendWithResend = async (mailOptions) => {
   if (!response.ok) throw new Error(`Resend request failed (${response.status})`);
 };
 
+// Absolute logo URL for email clients (relative paths don't work in email)
+const logoUrl = () => {
+  const base = String(process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/+$/, '');
+  return base ? `${base}/logo.jpg` : '';
+};
+
+const logoImg = (alt) => {
+  const url = logoUrl();
+  return url
+    ? `<img src="${url}" alt="${alt || 'Belleza'}" style="height:64px; background:#ffffff; border-radius:12px; padding:6px 12px;" />`
+    : '';
+};
+
 // Resend is the production default. SMTP remains available for local or legacy deployments.
 const sendEmail = async (mailOptions) => {
   if (process.env.RESEND_API_KEY) return sendWithResend(mailOptions);
@@ -68,6 +81,7 @@ const sendBookingConfirmation = async (appointment) => {
         <body>
           <div class="container">
             <div class="header">
+              ${logoImg('Belleza')}
               <h1>✨ Luxe Salon</h1>
               <p>Your beauty appointment is booked!</p>
             </div>
@@ -155,6 +169,7 @@ const sendStatusUpdateEmail = async (appointment, newStatus) => {
         <body>
           <div class="container">
             <div class="header">
+              ${logoImg('Belleza')}
               <h1>✨ Luxe Salon</h1>
             </div>
             <div class="content">

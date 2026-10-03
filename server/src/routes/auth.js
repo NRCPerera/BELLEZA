@@ -28,8 +28,8 @@ const publicUser = (user) => ({
 });
 
 // @route   POST /api/auth/register
-// @desc    Register a new customer
-// @access  Public
+// @desc    Customer self-registration disabled (guest booking via mobile + SMS)
+// @access  Disabled
 router.post(
   '/register',
   [
@@ -40,41 +40,7 @@ router.post(
       .withMessage('Password must be at least 6 characters'),
     body('phone').optional().trim(),
   ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    try {
-      const { name, email, password, phone } = req.body;
-
-      // Check if user exists
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ message: 'User with this email already exists' });
-      }
-
-      const user = await User.create({
-        name,
-        email,
-        password,
-        phone: phone || '',
-        role: 'customer',
-      });
-
-      const token = generateToken(user._id);
-      res.cookie('auth_token', token, authCookieOptions());
-
-      res.status(201).json({
-        token,
-        user: publicUser(user),
-      });
-    } catch (error) {
-      console.error('Register error:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  }
+  (req, res) => res.status(410).json({ message: 'Customer registration is disabled. Book as a guest with your mobile number.' })
 );
 
 // @route   POST /api/auth/login
@@ -103,6 +69,11 @@ router.post(
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid email or password' });
+      }
+
+      // Customer login removed: guest booking via mobile + SMS. Staff/admin only.
+      if (user.role === 'customer') {
+        return res.status(403).json({ message: 'Customer login is disabled. Book as a guest with your mobile number.' });
       }
 
       const token = generateToken(user._id);

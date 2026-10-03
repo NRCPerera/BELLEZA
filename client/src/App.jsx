@@ -9,11 +9,10 @@ import LandingPage from './pages/customer/LandingPage';
 import ServicesPage from './pages/customer/ServicesPage';
 import StaffPage from './pages/customer/StaffPage';
 import BookingPage from './pages/customer/BookingPage';
-import MyBookingsPage from './pages/customer/MyBookingsPage';
+import TrackBookingPage from './pages/customer/TrackBookingPage';
 
 // Auth pages
 import LoginPage from './pages/auth/LoginPage';
-import RegisterPage from './pages/auth/RegisterPage';
 import ChangePasswordPage from './pages/auth/ChangePasswordPage';
 
 // Admin pages
@@ -35,7 +34,18 @@ import StaffChangePassword from './pages/staff/StaffChangePassword';
 import StaffPortfolio from './pages/staff/StaffPortfolio';
 import DesignSystemPage from './pages/DesignSystemPage';
 
-const homeByRole = { customer: '/', admin: '/admin', staff: '/staff' };
+const homeByRole = { admin: '/admin', staff: '/staff' };
+
+// Protected route wrapper for staff/admin only (customer login removed)
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/admin/login" replace />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to={homeByRole[user.role] || '/'} replace />;
+  }
+  return children || <Outlet />;
+};
 
 const PasswordChangeGate = ({ children }) => {
   const { user, loading } = useAuth();
@@ -45,17 +55,6 @@ const PasswordChangeGate = ({ children }) => {
     return <Navigate to="/change-password" replace />;
   }
   return children;
-};
-
-// Protected route wrapper for authenticated users and authorized roles
-const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, loading } = useAuth();
-  if (loading) return <PageSpinner />;
-  if (!user) return <Navigate to="/login" replace />;
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={homeByRole[user.role] || '/'} replace />;
-  }
-  return children || <Outlet />;
 };
 
 // Public layout with navbar and footer
@@ -70,22 +69,21 @@ const PublicLayout = () => (
 function App() {
   return (
     <PasswordChangeGate><Routes>
-      {/* Public customer pages */}
+      {/* Public pages - no login required, guest booking via mobile + SMS */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<LandingPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/team" element={<StaffPage />} />
         <Route path="/team/:id" element={<StaffPage />} />
-
-        {/* Protected customer routes */}
-        <Route path="/booking" element={<ProtectedRoute allowedRoles={['customer']}><BookingPage /></ProtectedRoute>} />
-        <Route path="/my-bookings" element={<ProtectedRoute allowedRoles={['customer']}><MyBookingsPage /></ProtectedRoute>} />
+        <Route path="/booking" element={<BookingPage />} />
+        <Route path="/t/:bookingRef" element={<TrackBookingPage />} />
       </Route>
 
-      {/* Auth pages (no navbar/footer) */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+      {/* Hidden staff/admin entry (unlinked from public site) */}
+      <Route path="/admin/login" element={<LoginPage staffOnly />} />
+      <Route path="/login" element={<Navigate to="/admin/login" replace />} />
+      <Route path="/register" element={<Navigate to="/" replace />} />
+      <Route path="/my-bookings" element={<Navigate to="/booking" replace />} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
 
       {/* Admin panel */}

@@ -1,17 +1,38 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { ArrowRight, Clock, Heart, Scissors, ShieldCheck, Sparkles, Star, MapPin, Phone, MessageCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowRight, ArrowUpRight, Camera, Clock, Film, Heart, Scissors, ShieldCheck, Sparkles, Star, MapPin, Phone, MessageCircle, Play } from 'lucide-react';
 import { getRecentPortfolio, getServices, getStaff } from '../../api';
 import Lightbox from '../../components/ui/Lightbox';
+import StaffCard from '../../components/ui/StaffCard';
 import { CardSkeleton, Skeleton } from '../../components/ui/Skeleton';
+import { isVideoItem, photoThumb, videoPoster, formatDuration } from '../../utils/media';
 
-const avatar = (member) => member.photo ? <img src={member.photo} alt={member.name} className="h-full w-full object-cover" /> : member.name?.split(' ').map((word) => word[0]).join('');
+const gallerySrc = (item) =>
+  isVideoItem(item) ? videoPoster(item, 800) : photoThumb(item?.url, 800);
+
+// Bento mosaic spans: hero tile first, one tall tile, rest uniform.
+// Keeps the grid rhythmic on every breakpoint.
+const spanClass = (index) => {
+  if (index === 0) return 'col-span-2 row-span-2';
+  if (index === 3) return 'md:row-span-2';
+  if (index === 6) return 'col-span-2 md:col-span-1';
+  return '';
+};
 
 export default function LandingPage() {
   const [data, setData] = useState({ services: [], staff: [], work: [] });
   const [loading, setLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState(null);
-  useEffect(() => { Promise.all([getServices(), getStaff(), getRecentPortfolio(8)]).then(([services, staff, work]) => setData({ services: services.data.slice(0, 4), staff: staff.data.slice(0, 4), work: work.data })).catch(console.error).finally(() => setLoading(false)); }, []);
+  const [workFilter, setWorkFilter] = useState('all'); // all | photo | video
+  useEffect(() => { Promise.all([getServices(), getStaff(), getRecentPortfolio(12)]).then(([services, staff, work]) => setData({ services: services.data.slice(0, 4), staff: staff.data.slice(0, 4), work: work.data })).catch(console.error).finally(() => setLoading(false)); }, []);
+
+  const filteredWork = useMemo(() => {
+    if (workFilter === 'photo') return data.work.filter((w) => !isVideoItem(w));
+    if (workFilter === 'video') return data.work.filter(isVideoItem);
+    return data.work;
+  }, [data.work, workFilter]);
+  const photoCount = data.work.filter((w) => !isVideoItem(w)).length;
+  const videoCount = data.work.filter(isVideoItem).length;
 
   return <main className="overflow-hidden bg-background">
     {/* ═══ 1. HERO ═══ */}
@@ -104,23 +125,157 @@ export default function LandingPage() {
       </div>
     </section>
 
-    {/* ═══ 4. GALLERY ═══ */}
-    <section className="bg-primary-700 py-20 text-white">
-      <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
-        <p className="eyebrow !text-highlight-300">Gallery</p>
-        <div className="mt-3 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <h2 className="section-title !text-white">Little transformations,<br/><em className="text-accent-400">big feeling.</em></h2>
-          <p className="max-w-sm text-sm leading-6 text-white/60">A glimpse of the tailored looks our artists create every day.</p>
-        </div>
-        {loading ? <div className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="aspect-square rounded-2xl bg-white/10" />)}</div> :
-          <div className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-4">
-            {data.work.map((photo, index) =>
-              <button onClick={() => setLightboxIndex(index)} key={photo._id} className="group aspect-square overflow-hidden rounded-2xl bg-white/10">
-                <img src={photo.url?.replace('/upload/', '/upload/w_600,c_fill,f_auto,q_auto/')} alt={photo.caption || 'Recent salon work'} className="h-full w-full object-cover transition duration-500 group-hover:scale-110" loading="lazy" />
-              </button>
-            )}
+    {/* ═══ 4. PORTFOLIO — fresh from the studio ═══ */}
+    <section className="relative overflow-hidden bg-primary-800 py-20 text-white sm:py-24">
+      {/* ambient decoration */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_10%,rgba(217,154,166,.28),transparent_38%),radial-gradient(circle_at_8%_90%,rgba(197,164,109,.16),transparent_32%)]" />
+      <div className="pointer-events-none absolute -right-24 top-10 h-[420px] w-[420px] rounded-full border border-white/10" />
+      <div className="pointer-events-none absolute -right-10 top-24 h-[280px] w-[280px] rounded-full border border-white/10" />
+
+      <div className="relative mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+        {/* header */}
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-xl">
+            <p className="eyebrow !text-highlight-300">
+              <Sparkles className="mr-1 inline h-3.5 w-3.5" /> Portfolio · fresh from the studio
+            </p>
+            <h2 className="section-title mt-3 !text-white">
+              Real work,<br /><em className="text-accent-400">real glow.</em>
+            </h2>
+            <p className="mt-4 max-w-md text-sm leading-6 text-white/60">
+              Unfiltered finishes from our chairs — cuts, colour, skin and nails,
+              captured by the artists themselves.
+            </p>
+            {/* live counts */}
+            <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80">
+                <Camera className="h-3.5 w-3.5 text-accent-400" /> {photoCount} photos
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80">
+                <Film className="h-3.5 w-3.5 text-highlight-300" /> {videoCount} videos
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-white/80">
+                <Scissors className="h-3.5 w-3.5 text-white/60" /> by {data.staff.length || 'our'} artists
+              </span>
+            </div>
           </div>
-        }
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center lg:flex-col lg:items-end">
+            {/* filter pills */}
+            <div className="inline-flex w-fit rounded-full border border-white/15 bg-white/5 p-1 text-xs font-semibold backdrop-blur">
+              {[
+                { key: 'all', label: 'All work' },
+                { key: 'photo', label: 'Photos' },
+                { key: 'video', label: 'Videos' },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => { setWorkFilter(t.key); setLightboxIndex(null); }}
+                  className={`rounded-full px-4 py-2 transition-all ${
+                    workFilter === t.key
+                      ? 'bg-highlight-400 text-primary-900 shadow'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <Link to="/team" className="rounded-full border border-white/25 px-5 py-2.5 text-sm font-medium text-white/85 transition hover:bg-white/10 hover:text-white">
+                Meet the artists
+              </Link>
+              <Link to="/booking" className="rounded-full bg-highlight-400 px-5 py-2.5 text-sm font-semibold text-primary-900 shadow transition hover:shadow-float">
+                Book your glow <ArrowRight className="ml-1 inline h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* bento mosaic */}
+        {loading ? (
+          <div className="mt-10 grid auto-rows-[150px] grid-cols-2 gap-3 sm:auto-rows-[180px] md:grid-cols-4 lg:auto-rows-[200px]">
+            <Skeleton className="col-span-2 row-span-2 rounded-3xl bg-white/10" />
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="rounded-3xl bg-white/10" />
+            ))}
+          </div>
+        ) : filteredWork.length ? (
+          <>
+            <div className="mt-10 grid auto-rows-[150px] grid-cols-2 gap-3 sm:auto-rows-[180px] md:grid-cols-4 lg:auto-rows-[200px]">
+              {filteredWork.slice(0, 8).map((item, index) => {
+                const isVideo = isVideoItem(item);
+                return (
+                  <button
+                    key={item._id}
+                    onClick={() => setLightboxIndex(index)}
+                    className={`group relative overflow-hidden rounded-3xl bg-white/10 text-left ring-1 ring-white/10 transition duration-300 hover:ring-white/30 ${spanClass(index)}`}
+                  >
+                    <img
+                      src={gallerySrc(item)}
+                      alt={item.caption || 'Salon portfolio work'}
+                      loading={index > 1 ? 'lazy' : 'eager'}
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                    />
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent opacity-80 transition group-hover:opacity-95" />
+
+                    {/* top badges */}
+                    <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
+                      {isVideo ? <Film className="h-3 w-3" /> : <Camera className="h-3 w-3" />}
+                      {isVideo ? 'Video' : 'Photo'}
+                    </span>
+                    {isVideo && (
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition group-hover:scale-110 group-hover:bg-highlight-400 group-hover:text-primary-900">
+                          <Play className="ml-0.5 h-5 w-5 fill-current" />
+                        </span>
+                      </span>
+                    )}
+                    {!!item.duration && (
+                      <span className="absolute right-3 top-3 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
+                        {formatDuration(item.duration)}
+                      </span>
+                    )}
+
+                    {/* bottom caption */}
+                    <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-4">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-white">
+                          {item.caption || 'Untitled look'}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-white/60">
+                          {item.staff?.name ? `by ${item.staff.name}` : 'Belleza studio'}
+                          {item.service?.name ? ` · ${item.service.name}` : ''}
+                        </span>
+                      </span>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition group-hover:bg-white group-hover:text-primary-800">
+                        <ArrowUpRight className="h-4 w-4" />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-6 flex items-center justify-between text-xs text-white/50">
+              <p>Showing {Math.min(filteredWork.length, 8)} of {filteredWork.length} looks — tap any tile to view.</p>
+              <Link to="/team" className="inline-flex items-center gap-1 font-bold text-highlight-300 hover:text-highlight-200">
+                Explore all artists <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </>
+        ) : (
+          <div className="mt-10 rounded-3xl border border-dashed border-white/20 bg-white/5 p-14 text-center">
+            <Camera className="mx-auto h-10 w-10 text-white/30" />
+            <p className="mt-4 font-semibold text-white">No {workFilter === 'all' ? '' : workFilter + ' '}looks yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-white/50">
+              Our artists are busy creating — check back soon or meet the team behind the chair.
+            </p>
+            <Link to="/team" className="mt-6 inline-block rounded-full border border-white/25 px-5 py-2.5 text-sm font-medium text-white/85 transition hover:bg-white/10">
+              Meet the artists
+            </Link>
+          </div>
+        )}
       </div>
     </section>
 
@@ -133,15 +288,9 @@ export default function LandingPage() {
         </div>
         <Link to="/team" className="hidden text-sm font-bold text-primary-700 sm:block">Meet the team <ArrowRight className="inline h-4 w-4" /></Link>
       </div>
-      <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? [1,2,3,4].map(i => <Skeleton key={i} className="aspect-[3/4] rounded-3xl" />) : data.staff.map(member =>
-          <Link to={`/team/${member._id}`} key={member._id} className="group">
-            <div className="aspect-[3/4] overflow-hidden rounded-3xl bg-primary-100">
-              <div className="h-full w-full text-center text-4xl font-display font-bold text-primary-700 flex items-center justify-center">{avatar(member)}</div>
-            </div>
-            <h3 className="mt-4 font-bold text-ink-900">{member.name}</h3>
-            <p className="mt-1 text-xs text-ink-500">{member.specialties?.slice(0, 2).join(' · ') || 'Salon artist'}</p>
-          </Link>
+          <StaffCard key={member._id} member={member} />
         )}
       </div>
     </section>
@@ -236,6 +385,6 @@ export default function LandingPage() {
       </div>
     </section>
 
-    <Lightbox images={data.work} currentIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} onPrev={() => setLightboxIndex(i => Math.max(0, i - 1))} onNext={() => setLightboxIndex(i => Math.min(data.work.length - 1, i + 1))} />
+    <Lightbox images={filteredWork} currentIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} onPrev={() => setLightboxIndex(i => Math.max(0, i - 1))} onNext={() => setLightboxIndex(i => Math.min(filteredWork.length - 1, i + 1))} />
   </main>;
 }

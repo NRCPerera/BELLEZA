@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { isVideoItem, photoFull, optimizedVideoUrl, videoPoster } from '../../utils/media';
 
 const Lightbox = ({ images, currentIndex, onClose, onPrev, onNext }) => {
   const handleKeyDown = useCallback(
@@ -13,7 +14,7 @@ const Lightbox = ({ images, currentIndex, onClose, onPrev, onNext }) => {
 
   useEffect(() => {
     // The component stays mounted on landing and profile pages. Only lock the
-    // document while an image is actually open; otherwise it prevents normal
+    // document while an item is actually open; otherwise it prevents normal
     // page scrolling even though the lightbox renders nothing.
     if (currentIndex === null || currentIndex === undefined || !images?.[currentIndex]) {
       return undefined;
@@ -29,10 +30,9 @@ const Lightbox = ({ images, currentIndex, onClose, onPrev, onNext }) => {
   if (currentIndex === null || currentIndex === undefined || !images?.[currentIndex]) return null;
 
   const current = images[currentIndex];
-  // Cloudinary: full-size transform
-  const fullUrl = current.url?.includes('cloudinary')
-    ? current.url.replace('/upload/', '/upload/w_1600,f_auto,q_auto/')
-    : current.url;
+  const isVideo = isVideoItem(current);
+  // Cloudinary: full-size transform for photos, capped 720p stream for video
+  const fullUrl = isVideo ? optimizedVideoUrl(current) : photoFull(current.url);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md">
@@ -54,13 +54,26 @@ const Lightbox = ({ images, currentIndex, onClose, onPrev, onNext }) => {
         </button>
       )}
 
-      {/* Image */}
+      {/* Media */}
       <div className="max-w-[90vw] max-h-[85vh] flex flex-col items-center">
-        <img
-          src={fullUrl}
-          alt={current.caption || 'Portfolio photo'}
-          className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
-        />
+        {isVideo ? (
+          <video
+            key={current._id || fullUrl}
+            src={fullUrl}
+            poster={videoPoster(current, 800)}
+            controls
+            autoPlay
+            playsInline
+            preload="metadata"
+            className="max-w-full max-h-[80vh] rounded-lg shadow-2xl bg-black"
+          />
+        ) : (
+          <img
+            src={fullUrl}
+            alt={current.caption || 'Portfolio photo'}
+            className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+          />
+        )}
         {current.caption && (
           <p className="mt-4 text-white/80 text-sm text-center max-w-lg">{current.caption}</p>
         )}

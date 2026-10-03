@@ -186,23 +186,41 @@ router.patch(
       appointment.status = status;
       await appointment.save();
 
-      // Trigger status email for known statuses
+      // Trigger status SMS + email for known statuses (guest phone, legacy fallback)
       if (['confirmed', 'completed'].includes(status)) {
-        const emailData = {
-          customerName: appointment.customer.name,
-          customerEmail: appointment.customer.email,
-          serviceName: appointment.service.name,
-          staffName: appointment.staff.name,
-          date: appointment.date.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          }),
-          startTime: appointment.startTime,
-          endTime: appointment.endTime,
-        };
-        sendStatusUpdateEmail(emailData, status).catch(console.error);
+        const contactName = appointment.guestName || appointment.customer?.name || '';
+        const contactPhone = appointment.guestPhone || appointment.customer?.phone || '';
+        const contactEmail = appointment.guestEmail || appointment.customer?.email || '';
+        const dateLabel = appointment.date.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+        if (contactPhone) {
+          const { sendStatusSms } = require('../services/smsService');
+          sendStatusSms({
+            guestPhone: contactPhone,
+            guestName: contactName,
+            serviceName: appointment.service.name,
+            date: appointment.date,
+            startTime: appointment.startTime,
+            status,
+            bookingRef: appointment.bookingRef,
+          }).catch(console.error);
+        }
+        if (contactEmail) {
+          const emailData = {
+            customerName: contactName,
+            customerEmail: contactEmail,
+            serviceName: appointment.service.name,
+            staffName: appointment.staff.name,
+            date: dateLabel,
+            startTime: appointment.startTime,
+            endTime: appointment.endTime,
+          };
+          sendStatusUpdateEmail(emailData, status).catch(console.error);
+        }
       }
 
       res.json(appointment);

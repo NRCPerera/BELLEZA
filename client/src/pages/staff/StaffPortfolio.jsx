@@ -18,17 +18,31 @@ import {
   Pencil,
   X,
   AlertTriangle,
+  Play,
+  Film,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import {
+  isVideoItem,
+  photoThumb,
+  videoPoster,
+  optimizedVideoUrl,
+  formatDuration,
+} from '../../utils/media';
 
-// Cloudinary URL transformation helpers
-const thumb = (url) => {
-  if (!url?.includes('cloudinary')) return url;
-  return url.replace('/upload/', '/upload/w_600,c_fill,f_auto,q_auto/');
-};
+// Cloudinary URL transformation helpers (photos only; videos use posters)
+const thumb = (item) =>
+  isVideoItem(item) ? videoPoster(item, 600) : photoThumb(item.url, 600);
+
+const ACCEPT = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime';
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+const MAX_IMAGE = 5 * 1024 * 1024;
+const MAX_VIDEO = 50 * 1024 * 1024;
+const MAX_ITEMS = 30;
 
 const StaffPortfolio = () => {
-  const [photos, setPhotos] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -40,12 +54,19 @@ const StaffPortfolio = () => {
   const [deleting, setDeleting] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all'); // all | photo | video
+  const [playingId, setPlayingId] = useState(null);
   const fileInputRef = useRef(null);
 
-  const fetchPhotos = useCallback(() => {
+  const fetchItems = useCallback(() => {
     getMyPortfolio()
       .then((res) => {
-        setPhotos(res.data);
+        // Backwards compat: old docs have no mediaType -> treat as photo
+        const normalized = (res.data || []).map((d) => ({
+          ...d,
+          mediaType: d.mediaType || (d.resourceType === 'video' ? 'video' : 'photo'),
+        }));
+        setItems(normalized);
         setError('');
       })
       .catch((err) => setError(err.response?.data?.message || 'Failed to load portfolio'))
@@ -53,22 +74,29 @@ const StaffPortfolio = () => {
   }, []);
 
   useEffect(() => {
-    fetchPhotos();
-  }, [fetchPhotos]);
+    fetchItems();
+  }, [fetchItems]);
 
   // ─── File selection ─────────────────────────────────────────
   const handleFiles = (files) => {
     const fileList = Array.from(files);
-    const valid = fileList.filter((f) => {
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) {
-        toast.error(`${f.name}: Only JPG, PNG, WebP allowed`);
-        return false;
+    const valid = [];
+    fileList.forEach((f) => {
+      const isImage = IMAGE_TYPES.includes(f.type);
+      const isVideo = VIDEO_TYPES.includes(f.type);
+      if (!isImage && !isVideo) {
+        toast.error(`${f.name}: Only JPG, PNG, WebP photos or MP4, WebM, MOV videos`);
+        return;
       }
-      if (f.size > 5 * 1024 * 1024) {
-        toast.error(`${f.name}: Max 5MB per file`);
-        return false;
+      if (isImage && f.size > MAX_IMAGE) {
+        toast.error(`${f.name}: Max 5MB per photo`);
+        return;
       }
-      return true;
+      if (isVideo && f.size > MAX_VIDEO) {
+        toast.error(`${f.name}: Max 50MB per video`);
+        return;
+      }
+      valid.push(f);
     });
 
     if (valid.length === 0) return;
@@ -77,10 +105,12 @@ const StaffPortfolio = () => {
       return;
     }
 
-    // Generate previews
+    // Generate previews (videos get a <video> preview with preload="metadata"
+    // so only header bytes are fetched, never the full clip)
     const newPreviews = valid.map((f) => ({
       file: f,
       name: f.name,
+      kind: VIDEO_TYPES.includes(f.type) ? 'video' : 'photo',
       preview: URL.createObjectURL(f),
     }));
     setPreviews(newPreviews);
@@ -98,10 +128,15 @@ const StaffPortfolio = () => {
     setUploadProgress(0);
 
     const formData = new FormData();
-    previews.forEach((p) => formData.append('photos', p.file));
+    previews.forEach((p) => {
+      // Backend accepts `photos`, `videos`, or `media` — split by kind
+      // so per-type limits stay explicit.
+      formData.append(p.kind === 'video' ? 'videos' : 'photos', p.file);
+    });
 
     try {
       const res = await uploadPortfolioPhotos(formData, (progressEvent) => {
+        if (!progressEvent.total) return;
         const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
         setUploadProgress(pct);
       });
@@ -112,7 +147,7 @@ const StaffPortfolio = () => {
       }
 
       setPreviews([]);
-      fetchPhotos();
+      fetchItems();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Upload failed');
     } finally {
@@ -127,15 +162,15 @@ const StaffPortfolio = () => {
   };
 
   // ─── Caption editing ──────────────────────────────────────
-  const startEdit = (photo) => {
-    setEditingId(photo._id);
-    setEditCaption(photo.caption || '');
+  const startEdit = (item) => {
+    setEditingId(item._id);
+    setEditCaption(item.caption || '');
   };
 
   const saveCaption = async (id) => {
     try {
       await updatePortfolioPhoto(id, { caption: editCaption });
-      setPhotos((prev) =>
+      setItems((prev) =>
         prev.map((p) => (p._id === id ? { ...p, caption: editCaption } : p))
       );
       setEditingId(null);
@@ -146,15 +181,21 @@ const StaffPortfolio = () => {
   };
 
   // ─── Drag to reorder ──────────────────────────────────────
+  const visibleItems = items.filter((it) => {
+    if (filter === 'photo') return !isVideoItem(it);
+    if (filter === 'video') return isVideoItem(it);
+    return true;
+  });
+
   const handleDragStart = (idx) => setDragIdx(idx);
   const handleDragOver = (e, idx) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === idx) return;
 
-    const reordered = [...photos];
+    const reordered = [...items];
     const [moved] = reordered.splice(dragIdx, 1);
     reordered.splice(idx, 0, moved);
-    setPhotos(reordered);
+    setItems(reordered);
     setDragIdx(idx);
   };
 
@@ -162,12 +203,12 @@ const StaffPortfolio = () => {
     if (dragIdx === null) return;
     setDragIdx(null);
 
-    const order = photos.map((p, i) => ({ id: p._id, order: i }));
+    const order = items.map((p, i) => ({ id: p._id, order: i }));
     try {
       await reorderPortfolio(order);
     } catch (err) {
       toast.error('Failed to save order');
-      fetchPhotos();
+      fetchItems();
     }
   };
 
@@ -177,8 +218,8 @@ const StaffPortfolio = () => {
     setDeleting(true);
     try {
       await deletePortfolioPhoto(deleteModal._id);
-      setPhotos((prev) => prev.filter((p) => p._id !== deleteModal._id));
-      toast.success('Photo deleted');
+      setItems((prev) => prev.filter((p) => p._id !== deleteModal._id));
+      toast.success('Item deleted');
       setDeleteModal(null);
     } catch (err) {
       toast.error('Failed to delete');
@@ -186,6 +227,9 @@ const StaffPortfolio = () => {
       setDeleting(false);
     }
   };
+
+  const photoCount = items.filter((i) => !isVideoItem(i)).length;
+  const videoCount = items.filter(isVideoItem).length;
 
   // ─── Render ───────────────────────────────────────────────
   if (loading) {
@@ -202,8 +246,25 @@ const StaffPortfolio = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Portfolio</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Showcase your best work · {photos.length}/30 photos
+            Showcase your best work · {items.length}/{MAX_ITEMS} items ({photoCount} photos, {videoCount} videos)
           </p>
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 text-sm">
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'photo', label: 'Photos' },
+            { key: 'video', label: 'Videos' },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setFilter(t.key)}
+              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+                filter === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -236,17 +297,17 @@ const StaffPortfolio = () => {
               <Upload className="w-7 h-7" />
             </div>
             <p className="font-medium text-gray-700">
-              {dragOver ? 'Drop files here' : 'Drag & drop photos or click to browse'}
+              {dragOver ? 'Drop files here' : 'Drag & drop photos or videos, or click to browse'}
             </p>
             <p className="text-sm text-gray-400 mt-1">
-              JPG, PNG, WebP · Max 5MB each · Up to 10 at once
+              Photos: JPG, PNG, WebP · Max 5MB each · Videos: MP4, WebM, MOV · Max 50MB / 90s · Up to 10 at once
             </p>
           </div>
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/jpeg,image/png,image/webp"
+            accept={ACCEPT}
             className="hidden"
             onChange={(e) => {
               handleFiles(e.target.files);
@@ -298,13 +359,19 @@ const StaffPortfolio = () => {
             {previews.map((p, i) => (
               <div key={i} className="relative group">
                 <div className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                  <img
-                    src={p.preview}
-                    alt={p.name}
-                    className="w-full h-full object-cover"
-                  />
+                  {p.kind === 'video' ? (
+                    <video src={p.preview} preload="metadata" muted playsInline className="w-full h-full object-cover" />
+                  ) : (
+                    <img
+                      src={p.preview}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1 truncate">{p.name}</p>
+                <p className="text-xs text-gray-500 mt-1 truncate">
+                  {p.kind === 'video' ? <Film className="w-3 h-3 inline mr-1" /> : null}{p.name}
+                </p>
                 {!uploading && (
                   <button
                     onClick={() => {
@@ -322,101 +389,158 @@ const StaffPortfolio = () => {
         </div>
       )}
 
-      {/* Photo Grid */}
-      {photos.length === 0 ? (
+      {/* Media Grid */}
+      {visibleItems.length === 0 ? (
         <div className="card p-12 text-center">
           <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No portfolio photos yet</p>
+          <p className="text-gray-500 font-medium">
+            {items.length === 0 ? 'No portfolio items yet' : `No ${filter}s yet`}
+          </p>
           <p className="text-gray-400 text-sm mt-1">
-            Upload your first photos to showcase your work to clients
+            Upload photos and short videos to showcase your work to clients
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {photos.map((photo, idx) => (
-            <div
-              key={photo._id}
-              draggable
-              onDragStart={() => handleDragStart(idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDragEnd={handleDragEnd}
-              className={`card group overflow-hidden transition-all duration-200 ${
-                dragIdx === idx ? 'opacity-50 scale-95' : ''
-              }`}
-            >
-              {/* Image */}
-              <div className="relative aspect-square bg-gray-100">
-                <img
-                  src={thumb(photo.url)}
-                  alt={photo.caption || 'Portfolio photo'}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
+          {visibleItems.map((item, idx) => {
+            const isVideo = isVideoItem(item);
+            const playing = playingId === item._id;
+            return (
+              <div
+                key={item._id}
+                draggable
+                onDragStart={() => handleDragStart(idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragEnd={handleDragEnd}
+                className={`card group overflow-hidden transition-all duration-200 ${
+                  dragIdx === idx ? 'opacity-50 scale-95' : ''
+                }`}
+              >
+                {/* Media */}
+                <div className="relative aspect-square bg-gray-100">
+                  {isVideo && playing ? (
+                    <video
+                      src={optimizedVideoUrl(item)}
+                      poster={videoPoster(item, 600)}
+                      controls
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : isVideo ? (
+                    <button
+                      className="w-full h-full relative block"
+                      onClick={() => setPlayingId(item._id)}
+                      title="Preview video"
+                    >
+                      <img
+                        src={thumb(item)}
+                        alt={item.caption || 'Portfolio video'}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center text-white group-hover:bg-black/75 transition-colors">
+                          <Play className="w-5 h-5 ml-0.5" />
+                        </span>
+                      </span>
+                      {!!item.duration && (
+                        <span className="absolute bottom-2 right-2 text-[11px] font-medium bg-black/70 text-white px-1.5 py-0.5 rounded">
+                          {formatDuration(item.duration)}
+                        </span>
+                      )}
+                      <span className="absolute top-2 left-2 text-[11px] font-medium bg-black/70 text-white px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <Film className="w-3 h-3" /> Video
+                      </span>
+                    </button>
+                  ) : (
+                    <img
+                      src={thumb(item)}
+                      alt={item.caption || 'Portfolio photo'}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )}
 
-                {/* Overlay actions */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="absolute top-2 left-2">
-                    <div className="p-1.5 bg-white/90 rounded-lg cursor-grab active:cursor-grabbing">
-                      <GripVertical className="w-4 h-4 text-gray-600" />
+                  {/* Overlay actions */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <div className="absolute top-2 left-2 pointer-events-auto">
+                      <div className="p-1.5 bg-white/90 rounded-lg cursor-grab active:cursor-grabbing">
+                        <GripVertical className="w-4 h-4 text-gray-600" />
+                      </div>
+                    </div>
+                    <div className="absolute top-2 right-2 flex gap-1 pointer-events-auto">
+                      <button
+                        onClick={() => startEdit(item)}
+                        className="p-1.5 bg-white/90 rounded-lg text-gray-600 hover:text-primary-600 transition-colors"
+                        title="Edit caption"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteModal(item)}
+                        className="p-1.5 bg-white/90 rounded-lg text-gray-600 hover:text-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="absolute top-2 right-2 flex gap-1">
+                  {isVideo && playing && (
                     <button
-                      onClick={() => startEdit(photo)}
-                      className="p-1.5 bg-white/90 rounded-lg text-gray-600 hover:text-primary-600 transition-colors"
-                      title="Edit caption"
+                      onClick={() => setPlayingId(null)}
+                      className="absolute top-2 left-2 p-1.5 bg-black/60 rounded-lg text-white text-xs"
+                      title="Back to thumbnail"
                     >
-                      <Pencil className="w-4 h-4" />
+                      <XCircle className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => setDeleteModal(photo)}
-                      className="p-1.5 bg-white/90 rounded-lg text-gray-600 hover:text-red-600 transition-colors"
-                      title="Delete"
+                  )}
+                </div>
+
+                {/* Caption */}
+                <div className="p-3">
+                  {editingId === item._id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        className="input-field text-xs !py-1 !px-2 flex-1"
+                        value={editCaption}
+                        onChange={(e) => setEditCaption(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && saveCaption(item._id)}
+                        maxLength={200}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => saveCaption(item._id)}
+                        className="p-1 text-green-600 hover:bg-green-50 rounded"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p
+                      className="text-xs text-gray-500 truncate cursor-pointer hover:text-gray-700"
+                      onClick={() => startEdit(item)}
+                      title="Click to edit caption"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                      {item.caption || 'Add a caption...'}
+                    </p>
+                  )}
                 </div>
               </div>
-
-              {/* Caption */}
-              <div className="p-3">
-                {editingId === photo._id ? (
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      className="input-field text-xs !py-1 !px-2 flex-1"
-                      value={editCaption}
-                      onChange={(e) => setEditCaption(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveCaption(photo._id)}
-                      maxLength={200}
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => saveCaption(photo._id)}
-                      className="p-1 text-green-600 hover:bg-green-50 rounded"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="p-1 text-gray-400 hover:bg-gray-100 rounded"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <p
-                    className="text-xs text-gray-500 truncate cursor-pointer hover:text-gray-700"
-                    onClick={() => startEdit(photo)}
-                    title="Click to edit caption"
-                  >
-                    {photo.caption || 'Add a caption...'}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -424,13 +548,13 @@ const StaffPortfolio = () => {
       <Modal
         isOpen={!!deleteModal}
         onClose={() => setDeleteModal(null)}
-        title="Delete Photo"
+        title={deleteModal && isVideoItem(deleteModal) ? 'Delete Video' : 'Delete Photo'}
       >
         <div className="text-center py-4">
           <div className="w-14 h-14 mx-auto bg-red-50 rounded-full flex items-center justify-center mb-4">
             <AlertTriangle className="w-7 h-7 text-red-500" />
           </div>
-          <p className="text-gray-700 mb-1">Are you sure you want to delete this photo?</p>
+          <p className="text-gray-700 mb-1">Are you sure you want to delete this {deleteModal && isVideoItem(deleteModal) ? 'video' : 'photo'}?</p>
           <p className="text-sm text-gray-500">This action cannot be undone.</p>
           <div className="flex gap-3 mt-6">
             <button

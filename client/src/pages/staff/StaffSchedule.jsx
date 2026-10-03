@@ -51,7 +51,7 @@ const StaffSchedule = () => {
     const dateStr = new Date(apt.date).toISOString().split('T')[0];
     return {
       id: apt._id,
-      title: `${apt.customer?.name} - ${apt.service?.name}`,
+      title: `${((apt.guestName || apt.customer?.name) || '—')} - ${apt.service?.name}`,
       start: new Date(dateStr + 'T' + apt.startTime + ':00'),
       end: new Date(dateStr + 'T' + apt.endTime + ':00'),
       resource: apt,
@@ -142,10 +142,10 @@ const StaffSchedule = () => {
                 <User className="w-5 h-5 text-primary-600" />
               </div>
               <div>
-                <p className="font-semibold text-gray-900">{selectedApt.customer?.name}</p>
-                <p className="text-sm text-gray-500">{selectedApt.customer?.email}</p>
-                {selectedApt.customer?.phone && (
-                  <p className="text-sm text-gray-500">{selectedApt.customer?.phone}</p>
+                <p className="font-semibold text-gray-900">{((selectedApt.guestName || selectedApt.customer?.name) || '—')}</p>
+                <p className="text-sm text-gray-500">{(selectedApt.guestEmail || selectedApt.customer?.email)}</p>
+                {(selectedApt.guestPhone || selectedApt.customer?.phone) && (
+                  <p className="text-sm text-gray-500">{(selectedApt.guestPhone || selectedApt.customer?.phone)}</p>
                 )}
               </div>
             </div>

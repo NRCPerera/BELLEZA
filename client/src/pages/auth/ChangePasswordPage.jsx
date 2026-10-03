@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { changePassword as changePasswordAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 
-const homeByRole = { customer: '/', admin: '/admin', staff: '/staff' };
+const homeByRole = { admin: '/admin', staff: '/staff' };
 
 const ChangePasswordPage = () => {
   const { user, login } = useAuth();

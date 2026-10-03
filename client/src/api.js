@@ -16,7 +16,7 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 responses
+// Handle 401 responses (staff/admin portal only - public guest booking never redirects)
 API.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -26,9 +26,11 @@ API.interceptors.response.use(
     if (error.response?.status === 401 && !isCredentialCheck) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      // Only redirect if not already on login page
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+      // Only redirect if already inside the hidden staff/admin portal
+      const path = window.location.pathname;
+      const inPortal = path.startsWith('/admin') || path.startsWith('/staff');
+      if (inPortal && !path.includes('/login')) {
+        window.location.href = '/admin/login';
       }
     }
     return Promise.reject(error);
@@ -61,6 +63,7 @@ export const deleteStaff = (id) => API.delete(`/staff/${id}`);
 export const getAppointments = (params) => API.get('/appointments', { params });
 export const getAvailableSlots = (params) => API.get('/appointments/slots', { params });
 export const createAppointment = (data) => API.post('/appointments', data);
+export const getBookingByRef = (ref) => API.get(`/appointments/track/${encodeURIComponent(ref)}`);
 export const updateAppointmentStatus = (id, status) => API.put(`/appointments/${id}/status`, { status });
 export const cancelAppointment = (id) => API.put(`/appointments/${id}/cancel`);
 
@@ -69,6 +72,10 @@ export const getAdminStats = () => API.get('/admin/stats');
 export const getCustomers = () => API.get('/admin/customers');
 export const getCustomerAppointments = (id) => API.get(`/admin/customers/${id}/appointments`);
 export const createStaffAccount = (data) => API.post('/admin/staff-accounts', data);
+export const getSlotBlocks = (params) => API.get('/admin/blocks', { params });
+export const createSlotBlock = (data) => API.post('/admin/blocks', data);
+export const deleteSlotBlock = (id) => API.delete(`/admin/blocks/${id}`);
+export const getPublicBlocks = (params) => API.get('/appointments/blocks', { params });
 
 // Staff Self-Service (staff portal)
 export const getStaffOverview = () => API.get('/staff/me/overview');

@@ -172,7 +172,7 @@ const StaffAppointments = () => {
                       <td className="px-5 py-3 text-gray-600">
                         {apt.startTime} - {apt.endTime}
                       </td>
-                      <td className="px-5 py-3 font-medium text-gray-900">{apt.customer?.name}</td>
+                      <td className="px-5 py-3 font-medium text-gray-900">{((apt.guestName || apt.customer?.name) || '—')}</td>
                       <td className="px-5 py-3 text-gray-600">{apt.service?.name}</td>
                       <td className="px-5 py-3">
                         <StatusBadge status={apt.status} />
@@ -222,7 +222,7 @@ const StaffAppointments = () => {
                 <div key={apt._id} className="p-4 hover:bg-gray-50/50 transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="font-medium text-gray-900">{apt.customer?.name}</p>
+                      <p className="font-medium text-gray-900">{((apt.guestName || apt.customer?.name) || '—')}</p>
                       <p className="text-sm text-gray-500">{apt.service?.name}</p>
                     </div>
                     <StatusBadge status={apt.status} />
@@ -277,10 +277,10 @@ const StaffAppointments = () => {
                 <User className="w-5 h-5 text-primary-600" />
               </div>
               <div>
-                <p className="font-semibold text-gray-900">{selectedApt.customer?.name}</p>
-                <p className="text-sm text-gray-500">{selectedApt.customer?.email}</p>
-                {selectedApt.customer?.phone && (
-                  <p className="text-sm text-gray-500">{selectedApt.customer?.phone}</p>
+                <p className="font-semibold text-gray-900">{((selectedApt.guestName || selectedApt.customer?.name) || '—')}</p>
+                <p className="text-sm text-gray-500">{(selectedApt.guestEmail || selectedApt.customer?.email)}</p>
+                {(selectedApt.guestPhone || selectedApt.customer?.phone) && (
+                  <p className="text-sm text-gray-500">{(selectedApt.guestPhone || selectedApt.customer?.phone)}</p>
                 )}
               </div>
             </div>

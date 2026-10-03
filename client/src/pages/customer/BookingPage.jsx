@@ -27,6 +27,9 @@ const BookingPage = () => {
     date: '',
     time: '',
     notes: '',
+    guestName: '',
+    guestPhone: '',
+    guestEmail: '',
   });
 
   useEffect(() => {
@@ -69,6 +72,14 @@ const BookingPage = () => {
   }, [selected.staff, selected.date, selected.service]);
 
   const handleSubmit = async () => {
+    if (!selected.guestName.trim()) {
+      toast.error('Please enter your name');
+      return;
+    }
+    if (!selected.guestPhone.trim()) {
+      toast.error('Please enter your mobile number');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await createAppointment({
@@ -77,12 +88,16 @@ const BookingPage = () => {
         date: selected.date,
         startTime: selected.time,
         notes: selected.notes,
+        guestName: selected.guestName.trim(),
+        guestPhone: selected.guestPhone.trim(),
+        guestEmail: selected.guestEmail.trim(),
       });
       setBooking(res.data);
       setSuccess(true);
-      toast.success('Appointment booked successfully!');
+      toast.success('Appointment booked! SMS confirmation sent.');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Booking failed');
+      const message = err.response?.data?.errors?.[0]?.msg || err.response?.data?.message || 'Booking failed';
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -94,22 +109,39 @@ const BookingPage = () => {
   if (loading) return <div className="min-h-screen bg-champagne-50 px-5 py-16"><div className="mx-auto max-w-4xl"><Skeleton className="mx-auto h-24 max-w-3xl rounded-3xl" /><div className="mt-10 grid gap-5 sm:grid-cols-2">{[1,2,3,4].map(i => <CardSkeleton key={i} />)}</div></div></div>;
 
   if (success) {
+    const trackPath = `/t/${booking?.bookingRef}`;
+    const trackUrl = `${window.location.origin}${trackPath}`;
     return (
       <div className="min-h-screen bg-gray-50/50 flex items-center justify-center px-4">
         <div className="card p-10 max-w-md w-full text-center animate-slide-up">
           <div className="w-16 h-16 mx-auto bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
             <Check className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
-          <p className="text-gray-500 mb-6">Your appointment has been booked successfully.</p>
-          <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2 mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Received!</h2>
+          <p className="text-gray-500 mb-6">SMS confirmation sent to {booking?.guestPhone}. Show ref <span className="font-bold text-gray-900">{booking?.bookingRef}</span> at the salon.</p>
+          <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2 mb-4">
             <p className="text-sm"><span className="text-gray-500">Service:</span> <span className="font-medium">{booking?.service?.name}</span></p>
             <p className="text-sm"><span className="text-gray-500">Stylist:</span> <span className="font-medium">{booking?.staff?.name}</span></p>
             <p className="text-sm"><span className="text-gray-500">Date:</span> <span className="font-medium">{new Date(booking?.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span></p>
             <p className="text-sm"><span className="text-gray-500">Time:</span> <span className="font-medium">{booking?.startTime} - {booking?.endTime}</span></p>
           </div>
+          <div className="bg-primary-50 rounded-xl p-4 text-left mb-6">
+            <p className="text-xs text-ink-500">View your booking anytime (same link as SMS):</p>
+            <div className="flex items-center gap-2 mt-1">
+              <button onClick={() => navigate(trackPath)} className="text-sm font-bold text-primary-700 break-all text-left flex-1">{trackUrl}</button>
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(trackUrl);
+                  toast.success('Link copied');
+                }}
+                className="btn-secondary text-xs !px-3 !py-2 flex-shrink-0"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
           <div className="flex gap-3">
-            <button onClick={() => navigate('/my-bookings')} className="btn-primary flex-1">My Bookings</button>
+            <button onClick={() => navigate(trackPath)} className="btn-primary flex-1">View Booking</button>
             <button onClick={() => navigate('/')} className="btn-secondary flex-1">Home</button>
           </div>
         </div>
@@ -199,8 +231,12 @@ const BookingPage = () => {
                     }`}
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-200 to-primary-400 flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
-                        {member.name.split(' ').map(n => n[0]).join('')}
+                      <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-br from-primary-200 to-primary-400 flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
+                        {member.photo ? (
+                          <img src={member.photo} alt={member.name} className="h-full w-full object-cover" loading="lazy" />
+                        ) : (
+                          member.name.split(' ').map(n => n[0]).join('')
+                        )}
                       </div>
                       <div>
                         <h3 className="font-semibold text-gray-900">{member.name}</h3>
@@ -299,7 +335,22 @@ const BookingPage = () => {
                   <div><p className="text-xs text-gray-500">Duration</p><p className="font-medium">{selected.service?.durationMinutes} minutes</p></div>
                 </div>
               </div>
-              <div className="mt-6">
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Your Name *</label>
+                  <input className="input-field" placeholder="Jane Doe" value={selected.guestName} onChange={(e) => setSelected(s => ({ ...s, guestName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Mobile Number *</label>
+                  <input className="input-field" placeholder="0771234567" inputMode="tel" value={selected.guestPhone} onChange={(e) => setSelected(s => ({ ...s, guestPhone: e.target.value }))} />
+                  <p className="text-xs text-gray-500 mt-1">SMS confirmation will be sent to this number.</p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email (optional)</label>
+                <input type="email" className="input-field" placeholder="you@example.com" value={selected.guestEmail} onChange={(e) => setSelected(s => ({ ...s, guestEmail: e.target.value }))} />
+              </div>
+              <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes (optional)</label>
                 <textarea className="input-field" rows="2" placeholder="Any special requests..." value={selected.notes} onChange={(e) => setSelected(s => ({ ...s, notes: e.target.value }))} />
               </div>

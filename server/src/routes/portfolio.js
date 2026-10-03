@@ -4,13 +4,17 @@ const cloudinary = require('../services/cloudinary');
 const PortfolioPhoto = require('../models/PortfolioPhoto');
 const Staff = require('../models/Staff');
 const { authenticate, authorize } = require('../middleware/auth');
-const { portfolioFiles, validateMagicBytes } = require('../middleware/upload');
+const { portfolioMediaFiles, validateMagicBytes, detectMediaType, isVideoMime } = require('../middleware/upload');
 const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
-const MAX_PHOTOS_PER_STAFF = 30;
+const MAX_ITEMS_PER_STAFF = 30; // photos + videos combined
+const MAX_PHOTOS_PER_STAFF = 30; // kept for backwards-compatible message text
+const MAX_VIDEO_DURATION_SEC = 90;
+const PORTFOLIO_SELECT =
+  'url caption staff service order createdAt mediaType resourceType thumbnailUrl duration bytes width height';
 
 // ─── RATE LIMITING for uploads ──────────────────────────────────────────────
 const uploadLimiter = rateLimit({
@@ -39,6 +43,46 @@ const uploadToCloudinary = (buffer, folder) =>
     );
     stream.end(buffer);
   });
+
+// ─── HELPER: upload video buffer to Cloudinary ──────────────────────────────
+// Optimization: cap at 720p, auto quality/format so playback stays light.
+// The player gets preload="none" + a poster thumbnail, so the heavy file
+// is only fetched after the user presses play.
+const uploadVideoToCloudinary = (buffer, folder, filename) =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: 'video',
+        // Adaptive-friendly delivery: limit resolution, let Cloudinary pick
+        // the best codec/quality per viewer.
+        transformation: [
+          { width: 1280, height: 720, crop: 'limit' },
+          { quality: 'auto:good', fetch_format: 'auto' },
+        ],
+        eager_async: true,
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+
+// First-frame poster so grids never download video bytes until play.
+const videoPosterUrl = (publicId) => {
+  try {
+    return cloudinary.url(publicId, {
+      secure: true,
+      resource_type: 'video',
+      format: 'jpg',
+      transformation: [{ width: 600, crop: 'fill', quality: 'auto', start_offset: '1' }],
+    });
+  } catch {
+    return '';
+  }
+};
 
 // ─── HELPER: resolve staff profile from authenticated user ──────────────────
 const resolveStaffProfile = async (req, res, next) => {
@@ -71,7 +115,7 @@ router.get('/recent', async (req, res) => {
       .populate('service', 'name category')
       .sort({ createdAt: -1 })
       .limit(limit)
-      .select('url caption staff service createdAt');
+      .select(PORTFOLIO_SELECT);
 
     res.json(photos);
   } catch (error) {
@@ -95,7 +139,7 @@ router.get('/staff/:staffId', async (req, res) => {
         .sort({ order: 1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select('url caption service order createdAt'),
+        .select(PORTFOLIO_SELECT),
       PortfolioPhoto.countDocuments({ staff: req.params.staffId }),
     ]);
 
@@ -141,7 +185,7 @@ router.get(
 );
 
 // @route   POST /api/staff/me/portfolio
-// @desc    Upload portfolio photos
+// @desc    Upload portfolio photos + videos (max 30 items combined)
 // @access  Staff
 router.post(
   '/',
@@ -149,18 +193,19 @@ router.post(
   authorize('staff'),
   resolveStaffProfile,
   uploadLimiter,
-  portfolioFiles,
+  portfolioMediaFiles,
   validateMagicBytes,
   async (req, res) => {
     try {
+      const files = Array.isArray(req.files) ? req.files : [];
       // Check existing count
       const existingCount = await PortfolioPhoto.countDocuments({
         staff: req.staffProfile._id,
       });
 
-      if (existingCount + req.files.length > MAX_PHOTOS_PER_STAFF) {
+      if (existingCount + files.length > MAX_ITEMS_PER_STAFF) {
         return res.status(400).json({
-          message: `Portfolio limit reached. You can have up to ${MAX_PHOTOS_PER_STAFF} photos (currently ${existingCount}).`,
+          message: `Portfolio limit reached. You can have up to ${MAX_ITEMS_PER_STAFF} photos + videos combined (currently ${existingCount}).`,
         });
       }
 
@@ -174,28 +219,64 @@ router.post(
       const results = [];
       const errors = [];
 
-      for (let i = 0; i < req.files.length; i++) {
-        const file = req.files[i];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const mime = file.detectedMime || detectMediaType(file.buffer) || file.mimetype || '';
+        const isVideo = isVideoMime(mime);
 
         try {
-          // Re-encode with sharp: strip EXIF/GPS, convert to webp
-          const processedBuffer = await sharp(file.buffer)
-            .rotate() // auto-rotate based on EXIF before stripping
-            .webp({ quality: 85 })
-            .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
-            .toBuffer();
+          if (isVideo) {
+            const cloudResult = await uploadVideoToCloudinary(file.buffer, folder, file.originalname);
 
-          const cloudResult = await uploadToCloudinary(processedBuffer, folder);
+            // Enforce a short-form limit so pages stay fast (90s max)
+            if (cloudResult.duration && cloudResult.duration > MAX_VIDEO_DURATION_SEC) {
+              await cloudinary.uploader
+                .destroy(cloudResult.public_id, { resource_type: 'video' })
+                .catch(() => {});
+              throw new Error(`Video too long (${Math.round(cloudResult.duration)}s). Max ${MAX_VIDEO_DURATION_SEC}s.`);
+            }
 
-          const photo = await PortfolioPhoto.create({
-            staff: req.staffProfile._id,
-            url: cloudResult.secure_url,
-            publicId: cloudResult.public_id,
-            caption: (captions[i] || '').slice(0, 200),
-            order: existingCount + i,
-          });
+            const item = await PortfolioPhoto.create({
+              staff: req.staffProfile._id,
+              url: cloudResult.secure_url,
+              publicId: cloudResult.public_id,
+              mediaType: 'video',
+              resourceType: 'video',
+              thumbnailUrl: videoPosterUrl(cloudResult.public_id),
+              duration: cloudResult.duration || 0,
+              bytes: cloudResult.bytes || file.size,
+              width: cloudResult.width || 0,
+              height: cloudResult.height || 0,
+              caption: (captions[i] || '').slice(0, 200),
+              order: existingCount + i,
+            });
 
-          results.push(photo);
+            results.push(item);
+          } else {
+            // Re-encode with sharp: strip EXIF/GPS, convert to webp
+            const processedBuffer = await sharp(file.buffer)
+              .rotate() // auto-rotate based on EXIF before stripping
+              .webp({ quality: 85 })
+              .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+              .toBuffer();
+
+            const cloudResult = await uploadToCloudinary(processedBuffer, folder);
+
+            const photo = await PortfolioPhoto.create({
+              staff: req.staffProfile._id,
+              url: cloudResult.secure_url,
+              publicId: cloudResult.public_id,
+              mediaType: 'photo',
+              resourceType: 'image',
+              bytes: cloudResult.bytes || file.size,
+              width: cloudResult.width || 0,
+              height: cloudResult.height || 0,
+              caption: (captions[i] || '').slice(0, 200),
+              order: existingCount + i,
+            });
+
+            results.push(photo);
+          }
         } catch (uploadErr) {
           console.error(`Upload failed for ${file.originalname}:`, uploadErr.message);
           errors.push({ file: file.originalname, error: uploadErr.message });
@@ -207,7 +288,7 @@ router.post(
         errors,
         message: errors.length > 0
           ? `${results.length} uploaded, ${errors.length} failed`
-          : `${results.length} photo(s) uploaded successfully`,
+          : `${results.length} item(s) uploaded successfully`,
       });
     } catch (error) {
       console.error('Portfolio upload error:', error);
@@ -297,7 +378,7 @@ router.patch(
 );
 
 // @route   DELETE /api/staff/me/portfolio/:id
-// @desc    Delete a portfolio photo (DB + Cloudinary)
+// @desc    Delete a portfolio item (DB + Cloudinary)
 // @access  Staff
 router.delete(
   '/:id([a-fA-F0-9]{24})',
@@ -309,18 +390,19 @@ router.delete(
       const photo = await PortfolioPhoto.findById(req.params.id);
 
       if (!photo) {
-        return res.status(404).json({ message: 'Photo not found' });
+        return res.status(404).json({ message: 'Item not found' });
       }
 
       // Ownership check
       if (photo.staff.toString() !== req.staffProfile._id.toString()) {
-        return res.status(403).json({ message: 'You can only delete your own photos' });
+        return res.status(403).json({ message: 'You can only delete your own items' });
       }
 
-      // Delete from Cloudinary
+      // Delete from Cloudinary (videos need resource_type: 'video')
       if (photo.publicId) {
         try {
-          await cloudinary.uploader.destroy(photo.publicId);
+          const resourceType = photo.resourceType || (photo.mediaType === 'video' ? 'video' : 'image');
+          await cloudinary.uploader.destroy(photo.publicId, { resource_type: resourceType });
         } catch (cloudErr) {
           console.error('Cloudinary delete error:', cloudErr.message);
           // Continue with DB deletion even if Cloudinary fails
@@ -329,7 +411,7 @@ router.delete(
 
       await PortfolioPhoto.findByIdAndDelete(photo._id);
 
-      res.json({ message: 'Photo deleted successfully' });
+      res.json({ message: 'Item deleted successfully' });
     } catch (error) {
       console.error('Portfolio delete error:', error);
       res.status(500).json({ message: 'Server error' });

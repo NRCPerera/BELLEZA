@@ -9,7 +9,6 @@ import {
   KeyRound,
   ImageIcon,
   LogOut,
-  Scissors,
   Menu,
   X,
 } from 'lucide-react';
@@ -30,7 +29,7 @@ const StaffLayout = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/login', { replace: true });
+    navigate('/admin/login', { replace: true });
   };
 
   const closeSidebar = () => setSidebarOpen(false);
@@ -53,11 +52,9 @@ const StaffLayout = () => {
       >
         <div className="p-5 border-b border-primary-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-accent-400 rounded-lg flex items-center justify-center">
-              <Scissors className="w-4 h-4 text-primary-900" />
-            </div>
+            <img src="/logo.jpg" alt="Belleza Staff" className="h-10 w-auto rounded-lg bg-white px-2 py-0.5" />
             <span className="font-display text-lg font-bold">
-              Belleza <span className="text-accent-400">Staff</span>
+              <span className="text-accent-400">Staff</span>
             </span>
           </div>
           <button
@@ -134,11 +131,9 @@ const StaffLayout = () => {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-accent-400 rounded-lg flex items-center justify-center">
-              <Scissors className="w-3.5 h-3.5 text-primary-900" />
-            </div>
+            <img src="/logo.jpg" alt="Belleza Staff" className="h-8 w-auto rounded-md bg-white px-1.5 py-0.5" />
             <span className="font-display text-base font-bold text-ink-900">
-              Belleza <span className="text-primary-700">Staff</span>
+              <span className="text-primary-700">Staff</span>
             </span>
           </div>
           <div className="w-9" /> {/* Spacer for centering */}

@@ -24,8 +24,7 @@ const AdminLayout = () => {
   const sidebar = <aside className="h-full w-72 bg-primary-900 p-4 text-white flex flex-col shadow-2xl">
     <div className="flex items-center justify-between px-3 py-3 mb-5">
       <NavLink to="/admin" onClick={close} className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-accent-400"><Scissors className="h-5 w-5 text-primary-900" /></span>
-        <span className="font-display text-2xl font-bold">Belleza</span>
+        <img src="/logo.jpg" alt="Belleza" className="h-11 w-auto rounded-xl bg-white px-2.5 py-1" />
       </NavLink>
       <button onClick={close} className="lg:hidden rounded-xl p-2 text-primary-300 hover:bg-white/10"><X className="h-5 w-5" /></button>
     </div>

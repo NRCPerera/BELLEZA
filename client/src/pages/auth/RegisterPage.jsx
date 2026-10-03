@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { register as registerAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { Scissors, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const RegisterPage = () => {
@@ -31,11 +31,8 @@ const RegisterPage = () => {
     <div className="relative min-h-screen overflow-hidden flex items-center justify-center bg-ink-900 px-5 py-12"><div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(213,82,123,.5),transparent_30%),radial-gradient(circle_at_85%_80%,rgba(236,205,138,.18),transparent_28%)]" />
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-md">
-              <Scissors className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-display text-2xl font-bold text-gray-900">Belleza</span>
+          <Link to="/" className="inline-flex mb-6 rounded-2xl bg-white px-4 py-2 shadow-md">
+            <img src="/logo.jpg" alt="Belleza" className="h-12 w-auto" />
           </Link>
           <h1 className="font-display text-4xl font-bold text-white">Create your account</h1>
           <p className="text-white/60 mt-2">Join us and book your first appointment</p>

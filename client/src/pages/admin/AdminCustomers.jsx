@@ -40,13 +40,13 @@ const AdminCustomers = () => {
     <div className="mx-auto max-w-[1500px] p-5 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
-        <p className="text-gray-500 text-sm mt-1">View all registered customers</p>
+        <p className="text-gray-500 text-sm mt-1">Customer bookings by mobile number + past registered customers</p>
         <div className="relative w-full sm:w-80"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-500" /><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} className="input-field !py-2.5 pl-9 text-sm" placeholder="Search customers..." /></div>
       </div>
 
       <div className="card overflow-hidden">
         {error ? <EmptyState icon={AlertCircle} title="Customers unavailable" description={error} /> : displayedCustomers.length === 0 ? (
-          <EmptyState icon={Users} title="No customers found" description={query ? 'Try another name, email, or phone number.' : 'Customers will appear here once they register.'} />
+          <EmptyState icon={Users} title="No customers found" description={query ? 'Try another name, email, or phone number.' : 'Customers will appear here once guest bookings arrive.'} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -1,17 +1,49 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const Appointment = require('../models/Appointment');
+const BookingLock = require('../models/BookingLock');
+const SlotBlock = require('../models/SlotBlock');
 const Service = require('../models/Service');
 const Staff = require('../models/Staff');
 const { authenticate, authorize } = require('../middleware/auth');
 const { sendBookingConfirmation, sendStatusUpdateEmail } = require('../services/emailService');
+const { sendBookingSms, sendStatusSms, normalizeRecipient, buildTrackLink } = require('../services/smsService');
+const { timeToMinutes, overlapsRange, dayBoundsUTC, isPastDate, toDayKey, isValidDayKey, isPastSlotToday } = require('../services/slotUtils');
 
 const router = express.Router();
 
-// Helper: convert "HH:MM" to minutes since midnight
-const timeToMinutes = (timeStr) => {
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  return hours * 60 + minutes;
+// Public booking throttle: protects SMS budget from spam/bots
+const bookingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { message: 'Too many booking attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Public track-link lookup throttle: magic link is view-only, still rate-limited
+const trackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { message: 'Too many lookup attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const generateBookingRef = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 6; i += 1) suffix += chars[Math.floor(Math.random() * chars.length)];
+  return `BZ-${suffix}`;
+};
+
+const resolveContact = (appointment) => {
+  const name = appointment.guestName || appointment.customer?.name || '';
+  const phone = appointment.guestPhone || appointment.customer?.phone || '';
+  const email = appointment.guestEmail || appointment.customer?.email || '';
+  return { name, phone, email };
 };
 
 // Helper: convert minutes since midnight to "HH:MM"
@@ -20,6 +52,62 @@ const minutesToTime = (mins) => {
   const m = (mins % 60).toString().padStart(2, '0');
   return `${h}:${m}`;
 };
+
+// Fetch blocks applying to a staff member on a date (own + salon-wide)
+// Uses dayKey (timezone-safe); falls back to legacy UTC date-range docs without dayKey.
+const getBlocksForDay = async (staffId, dayKey, dateInput) => {
+  const staffCond = { $or: [{ staff: staffId }, { staff: null }] };
+  const byKey = await SlotBlock.find({ dayKey, ...staffCond }).populate('staff', 'name');
+  if (dateInput) {
+    const { startOfDay, endOfDay } = dayBoundsUTC(dateInput);
+    const legacy = await SlotBlock.find({
+      dayKey: { $exists: false },
+      date: { $gte: startOfDay, $lte: endOfDay },
+      ...staffCond,
+    }).populate('staff', 'name');
+    return [...byKey, ...legacy];
+  }
+  return byKey;
+};
+
+// Same fallback for appointments (pre-dayKey docs)
+const getAppointmentsForDay = (staffId, dayKey, dateInput, extra = {}) => {
+  const staffCond = staffId ? { staff: staffId } : {};
+  if (!dateInput) {
+    return Appointment.find({ dayKey, ...staffCond, ...extra });
+  }
+  const { startOfDay, endOfDay } = dayBoundsUTC(dateInput);
+  return Appointment.find({
+    $and: [
+      { $or: [{ dayKey }, { dayKey: { $exists: false }, date: { $gte: startOfDay, $lte: endOfDay } }] },
+      staffCond,
+      extra,
+    ],
+  });
+};
+
+// Serialize concurrent booking writes per staff-day (works across instances)
+const withBookingLock = async (staffId, dayKey, fn) => {
+  const key = `booking:${staffId}:${dayKey}`;
+  const expiresAt = new Date(Date.now() + 10000);
+  try {
+    await BookingLock.create({ key, expiresAt });
+  } catch (err) {
+    if (err.code === 11000) {
+      // Another request holds the lock — brief wait then proceed to re-check
+      await new Promise((r) => setTimeout(r, 150 + Math.floor(Math.random() * 150)));
+    } else {
+      throw err;
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await BookingLock.deleteOne({ key }).catch(() => {});
+  }
+};
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // @route   GET /api/appointments/slots
 // @desc    Get available time slots for a staff member on a date
@@ -31,21 +119,38 @@ router.get('/slots', async (req, res) => {
     if (!staffId || !date || !serviceId) {
       return res.status(400).json({ message: 'staffId, date, and serviceId are required' });
     }
+    if (!isValidObjectId(staffId) || !isValidObjectId(serviceId)) {
+      return res.status(400).json({ message: 'Invalid staff or service' });
+    }
+    const dayKey = toDayKey(date);
+    if (!isValidDayKey(dayKey)) {
+      return res.status(400).json({ message: 'Invalid date format (use YYYY-MM-DD)' });
+    }
 
     // Get staff working hours
     const staff = await Staff.findById(staffId);
-    if (!staff) {
+    if (!staff || staff.isActive === false) {
       return res.status(404).json({ message: 'Staff not found' });
     }
 
     // Get service duration
     const service = await Service.findById(serviceId);
-    if (!service) {
+    if (!service || service.isActive === false) {
       return res.status(404).json({ message: 'Service not found' });
     }
+    const assigned = (service.assignedStaff || []).some(
+      (id) => String(id._id || id) === String(staff._id)
+    );
+    if (!assigned) {
+      return res.json([]); // Staff doesn't offer this service
+    }
 
-    // Determine day of week
-    const dateObj = new Date(date);
+    if (isPastDate(dayKey)) {
+      return res.json([]);
+    }
+
+    // Determine day of week from calendar dayKey (timezone-safe)
+    const dateObj = new Date(`${dayKey}T00:00:00Z`);
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayName = days[dateObj.getUTCDay()];
 
@@ -69,28 +174,29 @@ router.get('/slots', async (req, res) => {
     }
 
     // Get existing appointments for this staff on this date
-    const startOfDay = new Date(date);
-    startOfDay.setUTCHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setUTCHours(23, 59, 59, 999);
-
-    const existingAppointments = await Appointment.find({
-      staff: staffId,
-      date: { $gte: startOfDay, $lte: endOfDay },
+    const existingAppointments = await getAppointmentsForDay(staffId, dayKey, date, {
       status: { $ne: 'cancelled' },
     });
 
-    // Filter out slots that overlap with existing bookings
+    // Get admin blocks (walk-in rush) for this staff + salon-wide
+    const blocks = await getBlocksForDay(staffId, dayKey, date);
+
+    // Filter out slots that overlap with existing bookings or blocks
     const availableSlots = allSlots.filter((slotTime) => {
+      // Hide same-day slots that already passed (30-min prep buffer)
+      if (isPastSlotToday(dayKey, slotTime)) return false;
       const slotStart = timeToMinutes(slotTime);
       const slotEnd = slotStart + durationMinutes;
 
-      return !existingAppointments.some((apt) => {
+      const booked = existingAppointments.some((apt) => {
         const aptStart = timeToMinutes(apt.startTime);
         const aptEnd = timeToMinutes(apt.endTime);
         // Check overlap
-        return slotStart < aptEnd && slotEnd > aptStart;
+        return overlapsRange(slotStart, slotEnd, aptStart, aptEnd);
       });
+      if (booked) return false;
+
+      return !blocks.some((b) => overlapsRange(slotStart, slotEnd, b.startTime, b.endTime));
     });
 
     res.json(availableSlots);
@@ -100,35 +206,88 @@ router.get('/slots', async (req, res) => {
   }
 });
 
+// @route   GET /api/appointments/track/:bookingRef
+// @desc    Public view-only magic-link lookup (no login). Returns masked contact.
+// @access  Public
+router.get('/track/:bookingRef', trackLimiter, async (req, res) => {
+  try {
+    const ref = String(req.params.bookingRef || '').trim().toUpperCase();
+    if (!/^BZ-[A-Z2-9]{6}$/.test(ref)) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    const appointment = await Appointment.findOne({ bookingRef: ref }).populate([
+      { path: 'staff', select: 'name photo' },
+      { path: 'service', select: 'name category durationMinutes price' },
+    ]);
+    if (!appointment) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    const phone = appointment.guestPhone || appointment.customer?.phone || '';
+    const maskedPhone = phone.length >= 5 ? `${phone.slice(0, 4)}***${phone.slice(-3)}` : '—';
+    res.json({
+      bookingRef: appointment.bookingRef,
+      guestName: appointment.guestName || appointment.customer?.name || '',
+      phoneMasked: maskedPhone,
+      service: appointment.service,
+      staff: appointment.staff,
+      date: appointment.date,
+      startTime: appointment.startTime,
+      endTime: appointment.endTime,
+      status: appointment.status,
+    });
+  } catch (error) {
+    console.error('Track booking error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   GET /api/appointments/blocks
+// @desc    Public read of pause-blocks for a staff/date (so staff pages + booking UI can show "paused")
+// @access  Public
+router.get('/blocks', trackLimiter, async (req, res) => {
+  try {
+    const { staffId, date } = req.query;
+    if (!staffId || !date) {
+      return res.status(400).json({ message: 'staffId and date are required' });
+    }
+    const blocks = await getBlocksForDay(staffId, date);
+    res.json(blocks.map((b) => ({
+      _id: b._id,
+      staff: b.staff,
+      staffId: b.staff?._id || null,
+      salonWide: !b.staff,
+      date: b.date,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      reason: b.reason,
+    })));
+  } catch (error) {
+    console.error('Get blocks error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // @route   GET /api/appointments
-// @desc    Get appointments (admin: all, customer: own)
-// @access  Private
-router.get('/', authenticate, authorize('customer', 'admin'), async (req, res) => {
+// @desc    Get appointments (admin only - customer login removed)
+// @access  Admin
+router.get('/', authenticate, authorize('admin'), async (req, res) => {
   try {
     let filter = {};
 
-    if (req.user.role === 'customer') {
-      filter.customer = req.user._id;
+    // Optional filters for admin (dayKey is timezone-safe YYYY-MM-DD)
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.staffId) filter.staff = req.query.staffId;
+    if (req.query.date) {
+      const dayKey = toDayKey(req.query.date);
+      filter.$and = [
+        ...(filter.$and || []),
+        { $or: [{ dayKey }, { dayKey: { $exists: false }, date: (() => { const { startOfDay, endOfDay } = dayBoundsUTC(req.query.date); return { $gte: startOfDay, $lte: endOfDay }; })() }] },
+      ];
     }
-
-    // Optional filters for admin
-    if (req.user.role === 'admin') {
-      if (req.query.status) filter.status = req.query.status;
-      if (req.query.staffId) filter.staff = req.query.staffId;
-      if (req.query.date) {
-        const startOfDay = new Date(req.query.date);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-        const endOfDay = new Date(req.query.date);
-        endOfDay.setUTCHours(23, 59, 59, 999);
-        filter.date = { $gte: startOfDay, $lte: endOfDay };
-      }
-      if (req.query.startDate && req.query.endDate) {
-        const start = new Date(req.query.startDate);
-        start.setUTCHours(0, 0, 0, 0);
-        const end = new Date(req.query.endDate);
-        end.setUTCHours(23, 59, 59, 999);
-        filter.date = { $gte: start, $lte: end };
-      }
+    if (req.query.startDate && req.query.endDate) {
+      const startKey = toDayKey(req.query.startDate);
+      const endKey = toDayKey(req.query.endDate);
+      filter.dayKey = { $gte: startKey, $lte: endKey };
     }
 
     const appointments = await Appointment.find(filter)
@@ -145,19 +304,22 @@ router.get('/', authenticate, authorize('customer', 'admin'), async (req, res) =
 });
 
 // @route   POST /api/appointments
-// @desc    Create a booking
-// @access  Private
+// @desc    Create a guest booking (no login - mobile number is the identity)
+// @access  Public
 router.post(
   '/',
-  authenticate,
-  authorize('customer'),
+  bookingLimiter,
   [
-    body('serviceId').notEmpty().withMessage('Service is required'),
-    body('staffId').notEmpty().withMessage('Staff is required'),
-    body('date').notEmpty().withMessage('Date is required'),
+    body('serviceId').isMongoId().withMessage('Valid service is required'),
+    body('staffId').isMongoId().withMessage('Valid staff is required'),
+    body('date').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Date must be YYYY-MM-DD'),
     body('startTime')
       .matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
       .withMessage('Start time must be in HH:MM format'),
+    body('guestName').trim().notEmpty().withMessage('Name is required').isLength({ max: 100 }).withMessage('Name too long'),
+    body('guestPhone').trim().notEmpty().withMessage('Mobile number is required'),
+    body('guestEmail').optional({ checkFalsy: true }).isEmail().withMessage('Valid email is required'),
+    body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes too long'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -166,87 +328,186 @@ router.post(
     }
 
     try {
-      const { serviceId, staffId, date, startTime, notes } = req.body;
+      const { serviceId, staffId, date, startTime, notes, guestName, guestEmail } = req.body;
+      const dayKey = toDayKey(date);
+      if (!isValidDayKey(dayKey)) {
+        return res.status(400).json({ message: 'Invalid date format (use YYYY-MM-DD)' });
+      }
+      // Enforce 30-minute grid so bookings always align with displayed slots
+      if (timeToMinutes(startTime) % 30 !== 0) {
+        return res.status(400).json({ message: 'Start time must be on a 30-minute slot (e.g. 10:00, 10:30)' });
+      }
+      const guestPhone = normalizeRecipient(req.body.guestPhone);
+      if (!/^94[1-9]\d{8}$/.test(guestPhone)) {
+        return res.status(400).json({ message: 'Enter a valid Sri Lankan mobile number' });
+      }
 
-      // Get service duration
+      // Get service + staff, enforce active + assignment guards
       const service = await Service.findById(serviceId);
-      if (!service) {
+      if (!service || service.isActive === false) {
         return res.status(404).json({ message: 'Service not found' });
+      }
+      if (!Number.isInteger(service.durationMinutes) || service.durationMinutes < 15 || service.durationMinutes > 480) {
+        return res.status(400).json({ message: 'Service duration is invalid' });
+      }
+      const staffMember = await Staff.findById(staffId);
+      if (!staffMember || staffMember.isActive === false) {
+        return res.status(404).json({ message: 'Staff not found' });
+      }
+      const assigned = (service.assignedStaff || []).some(
+        (id) => String(id._id || id) === String(staffMember._id)
+      );
+      if (!assigned) {
+        return res.status(400).json({ message: 'This staff member does not offer the selected service' });
+      }
+
+      if (isPastDate(dayKey)) {
+        return res.status(400).json({ message: 'Cannot book a past date' });
+      }
+      if (isPastSlotToday(dayKey, startTime)) {
+        return res.status(400).json({ message: 'This time slot has already passed today' });
+      }
+
+      // Must fall inside staff working hours for that weekday
+      const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(`${dayKey}T00:00:00Z`).getUTCDay()];
+      const dayHours = (staffMember.workingHours || []).find(
+        (wh) => String(wh.day).toLowerCase() === weekday.toLowerCase()
+      );
+      if (!dayHours) {
+        return res.status(400).json({ message: 'Staff does not work on this day' });
       }
 
       // Calculate end time
       const startMinutes = timeToMinutes(startTime);
       const endMinutes = startMinutes + service.durationMinutes;
       const endTime = minutesToTime(endMinutes);
-
-      // Check if slot is still available
-      const dateObj = new Date(date);
-      const startOfDay = new Date(date);
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setUTCHours(23, 59, 59, 999);
-
-      const conflicting = await Appointment.findOne({
-        staff: staffId,
-        date: { $gte: startOfDay, $lte: endOfDay },
-        status: { $ne: 'cancelled' },
-        $or: [
-          {
-            $expr: {
-              $and: [
-                { $lt: [{ $toInt: { $substr: ['$startTime', 0, 2] } }, Math.floor(endMinutes / 60)] },
-                { $gt: [{ $toInt: { $substr: ['$endTime', 0, 2] } }, Math.floor(startMinutes / 60)] },
-              ],
-            },
-          },
-        ],
-      });
-
-      // Simple overlap check
-      const existingAppointments = await Appointment.find({
-        staff: staffId,
-        date: { $gte: startOfDay, $lte: endOfDay },
-        status: { $ne: 'cancelled' },
-      });
-
-      const hasConflict = existingAppointments.some((apt) => {
-        const aptStart = timeToMinutes(apt.startTime);
-        const aptEnd = timeToMinutes(apt.endTime);
-        return startMinutes < aptEnd && endMinutes > aptStart;
-      });
-
-      if (hasConflict) {
-        return res.status(400).json({ message: 'This time slot is no longer available' });
+      if (endMinutes > 24 * 60) {
+        return res.status(400).json({ message: 'Service ends after midnight — pick an earlier slot' });
       }
 
-      const appointment = await Appointment.create({
-        customer: req.user._id,
-        staff: staffId,
-        service: serviceId,
+      if (startMinutes < timeToMinutes(dayHours.start) || endMinutes > timeToMinutes(dayHours.end)) {
+        return res.status(400).json({ message: 'Selected time is outside staff working hours' });
+      }
+
+      const dateObj = new Date(`${dayKey}T00:00:00Z`);
+
+      // Serialised conflict + block check + create (fixes concurrent double-booking)
+      let populated;
+      let bookingRef;
+      try {
+        populated = await withBookingLock(staffId, dayKey, async () => {
+          const existingAppointments = await getAppointmentsForDay(staffId, dayKey, date, {
+            status: { $ne: 'cancelled' },
+          });
+
+          const hasConflict = existingAppointments.some((apt) => {
+            const aptStart = timeToMinutes(apt.startTime);
+            const aptEnd = timeToMinutes(apt.endTime);
+            return overlapsRange(startMinutes, endMinutes, aptStart, aptEnd);
+          });
+
+          if (hasConflict) {
+            const err = new Error('This time slot is no longer available');
+            err.statusCode = 400;
+            throw err;
+          }
+
+          // Admin pause-block check (walk-in rush): own + salon-wide blocks
+          const blocks = await getBlocksForDay(staffId, dayKey, date);
+          const blocked = blocks.find((b) => overlapsRange(startMinutes, endMinutes, b.startTime, b.endTime));
+          if (blocked) {
+            const err = new Error('Online booking is paused for this time. Please try another slot or call the salon.');
+            err.statusCode = 400;
+            throw err;
+          }
+
+          let ref = generateBookingRef();
+          for (let i = 0; i < 5; i += 1) {
+            const exists = await Appointment.findOne({ bookingRef: ref });
+            if (!exists) break;
+            ref = generateBookingRef();
+          }
+
+          let created;
+          try {
+            created = await Appointment.create({
+              guestName: String(guestName).trim(),
+              guestPhone,
+              guestEmail: (guestEmail || '').trim().toLowerCase(),
+              bookingRef: ref,
+              staff: staffId,
+              service: serviceId,
+              date: dateObj,
+              dayKey,
+              startTime,
+              endTime,
+              notes: (notes || '').slice(0, 500),
+              status: 'pending',
+            });
+          } catch (createErr) {
+            if (createErr.code === 11000 && createErr.keyPattern?.bookingRef) {
+              // bookingRef collision — single retry with fresh ref
+              created = await Appointment.create({
+                guestName: String(guestName).trim(),
+                guestPhone,
+                guestEmail: (guestEmail || '').trim().toLowerCase(),
+                bookingRef: generateBookingRef(),
+                staff: staffId,
+                service: serviceId,
+                date: dateObj,
+                dayKey,
+                startTime,
+                endTime,
+                notes: (notes || '').slice(0, 500),
+                status: 'pending',
+              });
+            } else {
+              throw createErr;
+            }
+          }
+
+          bookingRef = created.bookingRef;
+          return created.populate([
+            { path: 'staff', select: 'name photo' },
+            { path: 'service', select: 'name category durationMinutes price' },
+          ]);
+        });
+      } catch (lockErr) {
+        if (lockErr.statusCode === 400) {
+          return res.status(400).json({ message: lockErr.message });
+        }
+        throw lockErr;
+      }
+
+      const dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const trackLink = buildTrackLink(bookingRef);
+      console.log(`[booking ${bookingRef}] track link: ${trackLink} (phone: ${guestPhone})`);
+
+      // SMS confirmation (async, don't block response)
+      sendBookingSms({
+        guestPhone,
+        guestName: populated.guestName,
+        serviceName: populated.service.name,
+        staffName: populated.staff.name,
         date: dateObj,
         startTime,
         endTime,
-        notes: notes || '',
-        status: 'pending',
-      });
+        bookingRef: populated.bookingRef,
+        trackLink,
+      }).catch(console.error);
 
-      const populated = await appointment.populate([
-        { path: 'customer', select: 'name email phone' },
-        { path: 'staff', select: 'name photo' },
-        { path: 'service', select: 'name category durationMinutes price' },
-      ]);
-
-      // Send confirmation email (async, don't block response)
-      const emailData = {
-        customerName: populated.customer.name,
-        customerEmail: populated.customer.email,
-        serviceName: populated.service.name,
-        staffName: populated.staff.name,
-        date: dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-        startTime,
-        endTime,
-      };
-      sendBookingConfirmation(emailData).catch(console.error);
+      // Email confirmation if guest provided an email
+      if (populated.guestEmail) {
+        sendBookingConfirmation({
+          customerName: populated.guestName,
+          customerEmail: populated.guestEmail,
+          serviceName: populated.service.name,
+          staffName: populated.staff.name,
+          date: dateLabel,
+          startTime,
+          endTime,
+        }).catch(console.error);
+      }
 
       res.status(201).json(populated);
     } catch (error) {
@@ -282,18 +543,35 @@ router.put('/:id/status', authenticate, authorize('admin'), async (req, res) => 
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    // Send status update email
+    // SMS + email status update (guest phone is identity, legacy customer fallback)
     if (['confirmed', 'cancelled', 'completed'].includes(status)) {
-      const emailData = {
-        customerName: appointment.customer.name,
-        customerEmail: appointment.customer.email,
-        serviceName: appointment.service.name,
-        staffName: appointment.staff.name,
-        date: appointment.date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-        startTime: appointment.startTime,
-        endTime: appointment.endTime,
-      };
-      sendStatusUpdateEmail(emailData, status).catch(console.error);
+      const contact = resolveContact(appointment);
+      const dateLabel = appointment.date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const trackLink = appointment.bookingRef ? buildTrackLink(appointment.bookingRef) : '';
+      if (contact.phone) {
+        sendStatusSms({
+          guestPhone: contact.phone,
+          guestName: contact.name,
+          serviceName: appointment.service.name,
+          date: appointment.date,
+          startTime: appointment.startTime,
+          status,
+          bookingRef: appointment.bookingRef,
+          trackLink,
+        }).catch(console.error);
+      }
+      if (contact.email) {
+        const emailData = {
+          customerName: contact.name,
+          customerEmail: contact.email,
+          serviceName: appointment.service.name,
+          staffName: appointment.staff.name,
+          date: dateLabel,
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+        };
+        sendStatusUpdateEmail(emailData, status).catch(console.error);
+      }
     }
 
     res.json(appointment);
@@ -304,9 +582,9 @@ router.put('/:id/status', authenticate, authorize('admin'), async (req, res) => 
 });
 
 // @route   PUT /api/appointments/:id/cancel
-// @desc    Cancel appointment (customer cancels own, or admin)
-// @access  Private
-router.put('/:id/cancel', authenticate, authorize('customer', 'admin'), async (req, res) => {
+// @desc    Cancel appointment (admin only - customer login removed, guests call salon)
+// @access  Admin
+router.put('/:id/cancel', authenticate, authorize('admin'), async (req, res) => {
   try {
     const appointment = await Appointment.findById(req.params.id).populate([
       { path: 'customer', select: 'name email phone' },
@@ -318,11 +596,6 @@ router.put('/:id/cancel', authenticate, authorize('customer', 'admin'), async (r
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    // Customer can only cancel their own
-    if (req.user.role === 'customer' && appointment.customer._id.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized to cancel this appointment' });
-    }
-
     // Can only cancel pending or confirmed
     if (!['pending', 'confirmed'].includes(appointment.status)) {
       return res.status(400).json({ message: 'Cannot cancel this appointment' });
@@ -331,17 +604,33 @@ router.put('/:id/cancel', authenticate, authorize('customer', 'admin'), async (r
     appointment.status = 'cancelled';
     await appointment.save();
 
-    // Send cancellation email
-    const emailData = {
-      customerName: appointment.customer.name,
-      customerEmail: appointment.customer.email,
-      serviceName: appointment.service.name,
-      staffName: appointment.staff.name,
-      date: appointment.date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-      startTime: appointment.startTime,
-      endTime: appointment.endTime,
-    };
-    sendStatusUpdateEmail(emailData, 'cancelled').catch(console.error);
+    // SMS + email cancellation
+    const contact = resolveContact(appointment);
+    const trackLink = appointment.bookingRef ? buildTrackLink(appointment.bookingRef) : '';
+    if (contact.phone) {
+      sendStatusSms({
+        guestPhone: contact.phone,
+        guestName: contact.name,
+        serviceName: appointment.service.name,
+        date: appointment.date,
+        startTime: appointment.startTime,
+        status: 'cancelled',
+        bookingRef: appointment.bookingRef,
+        trackLink,
+      }).catch(console.error);
+    }
+    if (contact.email) {
+      const emailData = {
+        customerName: contact.name,
+        customerEmail: contact.email,
+        serviceName: appointment.service.name,
+        staffName: appointment.staff.name,
+        date: appointment.date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+      };
+      sendStatusUpdateEmail(emailData, 'cancelled').catch(console.error);
+    }
 
     res.json(appointment);
   } catch (error) {

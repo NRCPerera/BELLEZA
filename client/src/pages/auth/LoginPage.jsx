@@ -3,28 +3,32 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { login as loginAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { Scissors, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const LoginPage = () => {
+const LoginPage = ({ staffOnly = false }) => {
   const { register, handleSubmit, formState: { errors } } = useForm();
   const { login } = useAuth();
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const homeByRole = { customer: '/', admin: '/admin', staff: '/staff' };
+  const homeByRole = { admin: '/admin', staff: '/staff' };
 
   const onSubmit = async (data) => {
     setLoading(true);
     try {
       const res = await loginAPI(data);
+      if (staffOnly && res.data.user.role === 'customer') {
+        toast.error('Customer login is disabled. Please book as a guest.');
+        return;
+      }
       login(res.data.user, res.data.token);
       toast.success(`Welcome back, ${res.data.user.name}!`);
       navigate(
         res.data.user.mustChangePassword
           ? '/change-password'
-          : homeByRole[res.data.user.role] || '/',
+          : homeByRole[res.data.user.role] || '/admin/login',
         { replace: true }
       );
     } catch (err) {
@@ -38,16 +42,11 @@ const LoginPage = () => {
     <div className="relative min-h-screen overflow-hidden flex items-center justify-center bg-primary-700 px-5 py-10"><div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(217,154,166,.45),transparent_30%),radial-gradient(circle_at_85%_80%,rgba(197,164,109,.18),transparent_28%)]" />
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-accent-400 rounded-xl flex items-center justify-center shadow-md">
-              <Scissors className="w-5 h-5 text-primary-900" />
-            </div>
-            <span className="font-display text-2xl font-bold text-white">
-              Belleza
-            </span>
+          <Link to="/" className="inline-flex mb-6 rounded-2xl bg-white px-4 py-2 shadow-md">
+            <img src="/logo.jpg" alt="Belleza" className="h-12 w-auto" />
           </Link>
-          <h1 className="font-display text-4xl font-bold text-white">Welcome back</h1>
-          <p className="text-white/60 mt-2">Sign in to manage your appointments</p>
+          <h1 className="font-display text-4xl font-bold text-white">Staff login</h1>
+          <p className="text-white/60 mt-2">Admin and staff only</p>
         </div>
 
         <div className="card p-8">
@@ -93,13 +92,6 @@ const LoginPage = () => {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          <p className="text-center text-sm text-ink-500 mt-6">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-primary-700 font-medium hover:text-primary-600">
-              Sign up
-            </Link>
-          </p>
         </div>
       </div>
     </div>

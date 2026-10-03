@@ -123,7 +123,7 @@ const StaffOverview = () => {
                 {/* Details */}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900 truncate">
-                    {apt.customer?.name}
+                    {((apt.guestName || apt.customer?.name) || '—')}
                   </p>
                   <p className="text-sm text-gray-500 truncate">
                     {apt.service?.name} · {apt.service?.durationMinutes}min ·{' '}

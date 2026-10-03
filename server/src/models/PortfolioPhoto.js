@@ -15,6 +15,29 @@ const portfolioPhotoSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Cloudinary public ID is required'],
   },
+  mediaType: {
+    type: String,
+    enum: ['photo', 'video'],
+    default: 'photo',
+    index: true,
+  },
+  resourceType: {
+    type: String,
+    enum: ['image', 'video'],
+    default: 'image',
+  },
+  // Video-only fields (poster image + playback metadata)
+  thumbnailUrl: {
+    type: String,
+    default: '',
+  },
+  duration: {
+    type: Number, // seconds (video only)
+    default: 0,
+  },
+  bytes: { type: Number, default: 0 },
+  width: { type: Number, default: 0 },
+  height: { type: Number, default: 0 },
   caption: {
     type: String,
     trim: true,

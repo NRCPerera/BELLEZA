@@ -18,13 +18,16 @@ const addPortfolioPreviews = async (staff) => {
   const ids = staff.map((member) => member._id);
   const photos = await PortfolioPhoto.find({ staff: { $in: ids } })
     .sort({ order: 1, createdAt: -1 })
-    .select('staff url')
+    .select('staff url mediaType thumbnailUrl')
     .lean();
   const byStaff = new Map();
   photos.forEach((photo) => {
     const key = photo.staff.toString();
     const current = byStaff.get(key) || [];
-    if (current.length < 3) current.push(photo.url);
+    if (current.length < 3) {
+      const isVideo = photo.mediaType === 'video' || photo.resourceType === 'video';
+      current.push(isVideo && photo.thumbnailUrl ? photo.thumbnailUrl : photo.url);
+    }
     byStaff.set(key, current);
   });
   return staff.map((member) => ({
@@ -71,7 +74,7 @@ router.get('/:id/portfolio', async (req, res) => {
         .sort({ order: 1, createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .select('url caption service order createdAt'),
+        .select('url caption service order createdAt mediaType resourceType thumbnailUrl duration bytes width height'),
       PortfolioPhoto.countDocuments({ staff: req.params.id }),
     ]);
     res.json({ photos, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
@@ -168,13 +171,19 @@ router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
       return res.status(404).json({ message: 'Staff member not found' });
     }
 
-    // Clean up portfolio photos from Cloudinary and DB
+    // Clean up portfolio items from Cloudinary and DB
     try {
       const photos = await PortfolioPhoto.find({ staff: req.params.id });
       if (photos.length > 0 && cloudinary) {
         const deletePromises = photos
           .filter((p) => p.publicId)
-          .map((p) => cloudinary.uploader.destroy(p.publicId).catch(console.error));
+          .map((p) =>
+            cloudinary.uploader
+              .destroy(p.publicId, {
+                resource_type: p.resourceType || (p.mediaType === 'video' ? 'video' : 'image'),
+              })
+              .catch(console.error)
+          );
         await Promise.allSettled(deletePromises);
       }
       await PortfolioPhoto.deleteMany({ staff: req.params.id });
