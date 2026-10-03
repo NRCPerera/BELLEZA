@@ -205,6 +205,7 @@ router.patch(
             date: dateLabel,
             startTime: appointment.startTime,
             endTime: appointment.endTime,
+            bookingRef: appointment.bookingRef,
           };
           sendStatusUpdateEmail(emailData, status).catch(console.error);
         }

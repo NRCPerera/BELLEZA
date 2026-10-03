@@ -23,6 +23,24 @@ const sendWithResend = async (mailOptions) => {
   return data;
 };
 
+// Absolute track-link URL for emails (view-only booking page: /t/:bookingRef)
+const trackUrl = (bookingRef) => {
+  if (!bookingRef) return '';
+  const base = String(process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/+$/, '');
+  return base ? `${base}/t/${bookingRef}` : `/t/${bookingRef}`;
+};
+
+// CTA button that renders reliably in email clients
+const trackButton = (bookingRef) => {
+  const url = trackUrl(bookingRef);
+  if (!url) return '';
+  return `
+    <div style="text-align: center; margin: 24px 0 8px;">
+      <a href="${url}" style="display: inline-block; background: #e11d48; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; padding: 12px 32px; border-radius: 999px;">View Booking Details</a>
+      <p style="color: #9ca3af; font-size: 12px; margin: 12px 0 0;">Booking ref: <strong style="color: #4b5563;">${bookingRef}</strong><br /><a href="${url}" style="color: #e11d48;">${url}</a></p>
+    </div>`;
+};
+
 // Absolute logo URL for email clients (relative paths don't work in email)
 const logoUrl = () => {
   const base = String(process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/+$/, '');
@@ -103,7 +121,12 @@ const sendBookingConfirmation = async (appointment) => {
                   <span class="detail-label">Time</span>
                   <span class="detail-value">${appointment.startTime} - ${appointment.endTime}</span>
                 </div>
+                <div class="detail-row">
+                  <span class="detail-label">Booking Ref</span>
+                  <span class="detail-value">${appointment.bookingRef || '—'}</span>
+                </div>
               </div>
+              ${trackButton(appointment.bookingRef)}
               <p style="color: #4b5563; font-size: 14px;">We look forward to seeing you! If you need to make any changes, please log in to your account or contact us directly.</p>
             </div>
             <div class="footer">
@@ -178,7 +201,9 @@ const sendStatusUpdateEmail = async (appointment, newStatus) => {
                 <p style="margin: 4px 0; color: #4b5563;"><strong>Service:</strong> ${appointment.serviceName}</p>
                 <p style="margin: 4px 0; color: #4b5563;"><strong>Date:</strong> ${appointment.date}</p>
                 <p style="margin: 4px 0; color: #4b5563;"><strong>Time:</strong> ${appointment.startTime} - ${appointment.endTime}</p>
+                <p style="margin: 4px 0; color: #4b5563;"><strong>Booking Ref:</strong> ${appointment.bookingRef || '—'}</p>
               </div>
+              ${trackButton(appointment.bookingRef)}
             </div>
             <div class="footer">
               <p>Luxe Salon &bull; Where beauty meets luxury</p>

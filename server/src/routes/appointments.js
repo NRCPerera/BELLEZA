@@ -503,6 +503,7 @@ router.post(
           date: dateLabel,
           startTime,
           endTime,
+          bookingRef: populated.bookingRef,
         }).catch(console.error);
       }
 
@@ -553,6 +554,7 @@ router.put('/:id/status', authenticate, authorize('admin'), async (req, res) => 
           date: dateLabel,
           startTime: appointment.startTime,
           endTime: appointment.endTime,
+          bookingRef: appointment.bookingRef,
         };
         sendStatusUpdateEmail(emailData, status).catch(console.error);
       }
@@ -599,6 +601,7 @@ router.put('/:id/cancel', authenticate, authorize('admin'), async (req, res) => 
         date: appointment.date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
         startTime: appointment.startTime,
         endTime: appointment.endTime,
+        bookingRef: appointment.bookingRef,
       };
       sendStatusUpdateEmail(emailData, 'cancelled').catch(console.error);
     }
