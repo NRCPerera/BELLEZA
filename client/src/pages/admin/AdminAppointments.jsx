@@ -234,7 +234,7 @@ const AdminAppointments = () => {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div><p className="text-xs text-ink-500">Customer</p><p className="font-medium text-ink-900">{((selectedApt.guestName || selectedApt.customer?.name) || '—')}</p></div>
-              <div><p className="text-xs text-ink-500">Mobile (SMS)</p><p className="text-sm text-ink-700">{(selectedApt.guestPhone || selectedApt.customer?.phone) || '—'}</p></div>
+              <div><p className="text-xs text-ink-500">Mobile</p><p className="text-sm text-ink-700">{(selectedApt.guestPhone || selectedApt.customer?.phone) || '—'}</p></div>
               <div><p className="text-xs text-ink-500">Booking Ref</p><p className="font-medium text-ink-900">{selectedApt.bookingRef || '—'}</p></div>
               <div><p className="text-xs text-ink-500">Email</p><p className="text-sm text-ink-700">{(selectedApt.guestEmail || selectedApt.customer?.email) || '—'}</p></div>
               <div><p className="text-xs text-ink-500">Service</p><p className="font-medium text-ink-900">{selectedApt.service?.name}</p></div>

@@ -69,7 +69,7 @@ const PublicLayout = () => (
 function App() {
   return (
     <PasswordChangeGate><Routes>
-      {/* Public pages - no login required, guest booking via mobile + SMS */}
+      {/* Public pages - no login required, guest booking via mobile */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<LandingPage />} />
         <Route path="/services" element={<ServicesPage />} />

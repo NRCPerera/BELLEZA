@@ -9,12 +9,11 @@ const Service = require('../models/Service');
 const Staff = require('../models/Staff');
 const { authenticate, authorize } = require('../middleware/auth');
 const { sendBookingConfirmation, sendStatusUpdateEmail } = require('../services/emailService');
-const { sendBookingSms, sendStatusSms, normalizeRecipient, buildTrackLink } = require('../services/smsService');
 const { timeToMinutes, overlapsRange, dayBoundsUTC, isPastDate, toDayKey, isValidDayKey, isPastSlotToday } = require('../services/slotUtils');
 
 const router = express.Router();
 
-// Public booking throttle: protects SMS budget from spam/bots
+// Public booking throttle: protects from spam/bots
 const bookingLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -44,6 +43,18 @@ const resolveContact = (appointment) => {
   const phone = appointment.guestPhone || appointment.customer?.phone || '';
   const email = appointment.guestEmail || appointment.customer?.email || '';
   return { name, phone, email };
+};
+
+// Normalize LK numbers to 947XXXXXXXX (no +) for phone validation
+const normalizeRecipient = (raw) => {
+  if (!raw) return '';
+  let digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('0') && digits.length === 10) {
+    digits = `94${digits.slice(1)}`;
+  } else if (digits.length === 9) {
+    digits = `94${digits}`;
+  }
+  return digits;
 };
 
 // Helper: convert minutes since midnight to "HH:MM"
@@ -480,21 +491,7 @@ router.post(
       }
 
       const dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      const trackLink = buildTrackLink(bookingRef);
-      console.log(`[booking ${bookingRef}] track link: ${trackLink} (phone: ${guestPhone})`);
-
-      // SMS confirmation (async, don't block response)
-      sendBookingSms({
-        guestPhone,
-        guestName: populated.guestName,
-        serviceName: populated.service.name,
-        staffName: populated.staff.name,
-        date: dateObj,
-        startTime,
-        endTime,
-        bookingRef: populated.bookingRef,
-        trackLink,
-      }).catch(console.error);
+      console.log(`[booking ${bookingRef}] created (phone: ${guestPhone})`);
 
       // Email confirmation if guest provided an email
       if (populated.guestEmail) {
@@ -543,23 +540,10 @@ router.put('/:id/status', authenticate, authorize('admin'), async (req, res) => 
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    // SMS + email status update (guest phone is identity, legacy customer fallback)
+    // Email status update (guest phone is identity, legacy customer fallback)
     if (['confirmed', 'cancelled', 'completed'].includes(status)) {
       const contact = resolveContact(appointment);
       const dateLabel = appointment.date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      const trackLink = appointment.bookingRef ? buildTrackLink(appointment.bookingRef) : '';
-      if (contact.phone) {
-        sendStatusSms({
-          guestPhone: contact.phone,
-          guestName: contact.name,
-          serviceName: appointment.service.name,
-          date: appointment.date,
-          startTime: appointment.startTime,
-          status,
-          bookingRef: appointment.bookingRef,
-          trackLink,
-        }).catch(console.error);
-      }
       if (contact.email) {
         const emailData = {
           customerName: contact.name,
@@ -604,21 +588,8 @@ router.put('/:id/cancel', authenticate, authorize('admin'), async (req, res) => 
     appointment.status = 'cancelled';
     await appointment.save();
 
-    // SMS + email cancellation
+    // Email cancellation
     const contact = resolveContact(appointment);
-    const trackLink = appointment.bookingRef ? buildTrackLink(appointment.bookingRef) : '';
-    if (contact.phone) {
-      sendStatusSms({
-        guestPhone: contact.phone,
-        guestName: contact.name,
-        serviceName: appointment.service.name,
-        date: appointment.date,
-        startTime: appointment.startTime,
-        status: 'cancelled',
-        bookingRef: appointment.bookingRef,
-        trackLink,
-      }).catch(console.error);
-    }
     if (contact.email) {
       const emailData = {
         customerName: contact.name,

@@ -28,7 +28,7 @@ const publicUser = (user) => ({
 });
 
 // @route   POST /api/auth/register
-// @desc    Customer self-registration disabled (guest booking via mobile + SMS)
+// @desc    Customer self-registration disabled (guest booking via mobile)
 // @access  Disabled
 router.post(
   '/register',
@@ -71,7 +71,7 @@ router.post(
         return res.status(401).json({ message: 'Invalid email or password' });
       }
 
-      // Customer login removed: guest booking via mobile + SMS. Staff/admin only.
+      // Customer login removed: guest booking via mobile. Staff/admin only.
       if (user.role === 'customer') {
         return res.status(403).json({ message: 'Customer login is disabled. Book as a guest with your mobile number.' });
       }

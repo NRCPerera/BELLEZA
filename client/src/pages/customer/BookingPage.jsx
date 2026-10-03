@@ -94,7 +94,7 @@ const BookingPage = () => {
       });
       setBooking(res.data);
       setSuccess(true);
-      toast.success('Appointment booked! SMS confirmation sent.');
+      toast.success('Appointment booked! Email confirmation sent if email provided.');
     } catch (err) {
       const message = err.response?.data?.errors?.[0]?.msg || err.response?.data?.message || 'Booking failed';
       toast.error(message);
@@ -118,7 +118,7 @@ const BookingPage = () => {
             <Check className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Received!</h2>
-          <p className="text-gray-500 mb-6">SMS confirmation sent to {booking?.guestPhone}. Show ref <span className="font-bold text-gray-900">{booking?.bookingRef}</span> at the salon.</p>
+          <p className="text-gray-500 mb-6">Booking for {booking?.guestPhone}. Show ref <span className="font-bold text-gray-900">{booking?.bookingRef}</span> at the salon.</p>
           <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2 mb-4">
             <p className="text-sm"><span className="text-gray-500">Service:</span> <span className="font-medium">{booking?.service?.name}</span></p>
             <p className="text-sm"><span className="text-gray-500">Stylist:</span> <span className="font-medium">{booking?.staff?.name}</span></p>
@@ -126,7 +126,7 @@ const BookingPage = () => {
             <p className="text-sm"><span className="text-gray-500">Time:</span> <span className="font-medium">{booking?.startTime} - {booking?.endTime}</span></p>
           </div>
           <div className="bg-primary-50 rounded-xl p-4 text-left mb-6">
-            <p className="text-xs text-ink-500">View your booking anytime (same link as SMS):</p>
+            <p className="text-xs text-ink-500">View your booking anytime:</p>
             <div className="flex items-center gap-2 mt-1">
               <button onClick={() => navigate(trackPath)} className="text-sm font-bold text-primary-700 break-all text-left flex-1">{trackUrl}</button>
               <button
@@ -343,7 +343,7 @@ const BookingPage = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Mobile Number *</label>
                   <input className="input-field" placeholder="0771234567" inputMode="tel" value={selected.guestPhone} onChange={(e) => setSelected(s => ({ ...s, guestPhone: e.target.value }))} />
-                  <p className="text-xs text-gray-500 mt-1">SMS confirmation will be sent to this number.</p>
+                  <p className="text-xs text-gray-500 mt-1">We use this number as your booking identity.</p>
                 </div>
               </div>
               <div className="mt-4">

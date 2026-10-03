@@ -1,16 +1,5 @@
-const nodemailer = require('nodemailer');
-
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT, 10),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-};
+// Resend-only email service (https://resend.com)
+// Requires: RESEND_API_KEY, EMAIL_FROM (verified sender/domain in Resend dashboard)
 
 const sendWithResend = async (mailOptions) => {
   const response = await fetch('https://api.resend.com/emails', {
@@ -27,7 +16,11 @@ const sendWithResend = async (mailOptions) => {
     }),
   });
 
-  if (!response.ok) throw new Error(`Resend request failed (${response.status})`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || `Resend request failed (${response.status})`);
+  }
+  return data;
 };
 
 // Absolute logo URL for email clients (relative paths don't work in email)
@@ -43,13 +36,18 @@ const logoImg = (alt) => {
     : '';
 };
 
-// Resend is the production default. SMTP remains available for local or legacy deployments.
+// Resend is the only email provider. Skips with a warning when not configured
+// so bookings never break because of email.
 const sendEmail = async (mailOptions) => {
-  if (process.env.RESEND_API_KEY) return sendWithResend(mailOptions);
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return createTransporter().sendMail(mailOptions);
+  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+    console.warn('Email not sent: RESEND_API_KEY/EMAIL_FROM not configured');
+    return { skipped: true };
   }
-  console.warn('Email not sent: no email provider is configured');
+  if (!mailOptions.to) {
+    console.warn('Email not sent: no recipient');
+    return { skipped: true };
+  }
+  return sendWithResend(mailOptions);
 };
 
 const sendBookingConfirmation = async (appointment) => {

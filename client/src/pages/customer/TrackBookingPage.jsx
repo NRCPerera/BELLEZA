@@ -30,7 +30,7 @@ const TrackBookingPage = () => {
         <div className="mx-auto max-w-3xl text-center">
           <p className="eyebrow !text-champagne-200">Booking status</p>
           <h1 className="mt-2 font-display text-4xl font-bold">{ref || 'Your booking'}</h1>
-          <p className="mt-2 text-white/60">View-only link from your SMS. No login needed.</p>
+          <p className="mt-2 text-white/60">View-only booking link. No login needed.</p>
         </div>
       </section>
       <div className="mx-auto max-w-3xl px-5 py-10">

@@ -186,10 +186,9 @@ router.patch(
       appointment.status = status;
       await appointment.save();
 
-      // Trigger status SMS + email for known statuses (guest phone, legacy fallback)
+      // Trigger status email for known statuses
       if (['confirmed', 'completed'].includes(status)) {
         const contactName = appointment.guestName || appointment.customer?.name || '';
-        const contactPhone = appointment.guestPhone || appointment.customer?.phone || '';
         const contactEmail = appointment.guestEmail || appointment.customer?.email || '';
         const dateLabel = appointment.date.toLocaleDateString('en-US', {
           weekday: 'long',
@@ -197,18 +196,6 @@ router.patch(
           month: 'long',
           day: 'numeric',
         });
-        if (contactPhone) {
-          const { sendStatusSms } = require('../services/smsService');
-          sendStatusSms({
-            guestPhone: contactPhone,
-            guestName: contactName,
-            serviceName: appointment.service.name,
-            date: appointment.date,
-            startTime: appointment.startTime,
-            status,
-            bookingRef: appointment.bookingRef,
-          }).catch(console.error);
-        }
         if (contactEmail) {
           const emailData = {
             customerName: contactName,
