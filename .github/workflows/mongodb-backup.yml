@@ -19,7 +19,7 @@ jobs:
           echo "${PWD}/mongodb-database-tools-ubuntu2204-x86_64-100.11.0/bin" >> "$GITHUB_PATH"
       - name: Create compressed database dump
         env:
-          MONGODB_URI: ${{ secrets.MONGODB_BACKUP_URI }}
+          MONGODB_URI: ${{ secrets.MONGODB_BACKUP_URI || secrets.MONGODB_URI }}
         run: |
           test -n "$MONGODB_URI"
           mkdir -p backups
