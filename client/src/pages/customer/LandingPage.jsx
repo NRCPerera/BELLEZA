@@ -88,7 +88,7 @@ export default function LandingPage() {
             <article key={service._id} className="group rounded-3xl bg-background p-6 transition hover:-translate-y-1 border border-ink-100">
               <div className="flex justify-between">
                 <span className="eyebrow">{service.category}</span>
-                <span className="font-display text-2xl font-bold text-primary-700">${service.price}</span>
+                <span className="font-display text-2xl font-bold text-primary-700">Rs {service.price}</span>
               </div>
               <h3 className="mt-9 text-xl font-bold text-ink-900">{service.name}</h3>
               <p className="mt-2 min-h-12 text-sm leading-6 text-ink-500">{service.description}</p>

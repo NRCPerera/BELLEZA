@@ -198,7 +198,7 @@ const BookingPage = () => {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <span className="px-2.5 py-0.5 bg-primary-50 text-primary-600 rounded-full text-xs font-medium">{service.category}</span>
-                    <span className="text-lg font-bold text-primary-600">${service.price}</span>
+                    <span className="text-lg font-bold text-primary-600">Rs {service.price}</span>
                   </div>
                   <h3 className="font-semibold text-gray-900">{service.name}</h3>
                   <p className="text-sm text-gray-500 mt-1 line-clamp-2">{service.description}</p>
@@ -320,7 +320,7 @@ const BookingPage = () => {
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                   <Sparkles className="w-5 h-5 text-primary-500" />
                   <div><p className="text-xs text-gray-500">Service</p><p className="font-medium">{selected.service?.name}</p></div>
-                  <span className="ml-auto font-bold text-primary-600">${selected.service?.price}</span>
+                  <span className="ml-auto font-bold text-primary-600">Rs {selected.service?.price}</span>
                 </div>
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                   <User className="w-5 h-5 text-primary-500" />

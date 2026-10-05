@@ -238,7 +238,7 @@ const AdminAppointments = () => {
               <div><p className="text-xs text-ink-500">Booking Ref</p><p className="font-medium text-ink-900">{selectedApt.bookingRef || '—'}</p></div>
               <div><p className="text-xs text-ink-500">Email</p><p className="text-sm text-ink-700">{(selectedApt.guestEmail || selectedApt.customer?.email) || '—'}</p></div>
               <div><p className="text-xs text-ink-500">Service</p><p className="font-medium text-ink-900">{selectedApt.service?.name}</p></div>
-              <div><p className="text-xs text-ink-500">Price</p><p className="font-medium text-ink-900">${selectedApt.service?.price}</p></div>
+              <div><p className="text-xs text-ink-500">Price</p><p className="font-medium text-ink-900">Rs {selectedApt.service?.price}</p></div>
               <div><p className="text-xs text-ink-500">Staff</p><p className="font-medium text-ink-900">{selectedApt.staff?.name}</p></div>
               <div><p className="text-xs text-ink-500">Status</p><StatusBadge status={selectedApt.status} /></div>
               <div><p className="text-xs text-ink-500">Date</p><p className="font-medium text-ink-900">{new Date(selectedApt.date).toLocaleDateString()}</p></div>

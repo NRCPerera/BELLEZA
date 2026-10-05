@@ -59,6 +59,8 @@ npm run seed
 
 Seeding deletes all application data and is deliberately disabled in production. In a development-only server `.env`, set `ALLOW_SEED=true` and provide `SEED_ADMIN_NAME`, `SEED_ADMIN_EMAIL`, and a unique `SEED_ADMIN_PASSWORD` of at least 12 characters. No default credentials are included.
 
+Also provide `SEED_PRIYANANDA_PASSWORD` and `SEED_SASANKA_PASSWORD`, each at least 8 characters. The seed creates two users with `role: 'staff'`: `priyananda@belleza.lk` and `sasanka.prabath@belleza.lk`. Each user is linked to the matching staff profile and must change their password on first login.
+
 ### 4. Start both servers
 
 ```bash

@@ -106,7 +106,7 @@ const AdminServices = () => {
                     <td className="px-5 py-3 font-medium text-ink-900">{svc.name}</td>
                     <td className="px-5 py-3"><span className="px-2 py-0.5 bg-primary-50 text-primary-600 rounded-full text-xs">{svc.category}</span></td>
                     <td className="px-5 py-3 text-ink-500">{svc.durationMinutes} min</td>
-                    <td className="px-5 py-3 font-medium text-ink-900">${svc.price}</td>
+                    <td className="px-5 py-3 font-medium text-ink-900">Rs {svc.price}</td>
                     <td className="px-5 py-3 text-ink-500 text-xs">{svc.assignedStaff?.map(s => s.name || 'N/A').join(', ')}</td>
                     <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${svc.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{svc.isActive ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-3">
@@ -130,7 +130,7 @@ const AdminServices = () => {
             <div><label className="block text-sm font-medium text-ink-700 mb-1">Category *</label><input className="input-field" placeholder="e.g. Hair, Skin, Nails" {...register('category', { required: 'Required' })} /></div>
             <div><label className="block text-sm font-medium text-ink-700 mb-1">Duration (min) *</label><input type="number" className="input-field" {...register('durationMinutes', { required: 'Required', min: { value: 15, message: 'Min 15' } })} /></div>
           </div>
-          <div><label className="block text-sm font-medium text-ink-700 mb-1">Price ($) *</label><input type="number" step="0.01" className="input-field" {...register('price', { required: 'Required', min: { value: 0, message: 'Min 0' } })} /></div>
+          <div><label className="block text-sm font-medium text-ink-700 mb-1">Price (Rs) *</label><input type="number" step="0.01" className="input-field" {...register('price', { required: 'Required', min: { value: 0, message: 'Min 0' } })} /></div>
           <div><label className="block text-sm font-medium text-ink-700 mb-1">Description</label><textarea className="input-field" rows="2" {...register('description')} /></div>
           <div>
             <label className="block text-sm font-medium text-ink-700 mb-2">Assign Staff</label>

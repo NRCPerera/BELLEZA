@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getStaffProfile, getServices, updateStaffProfile, uploadStaffProfilePhoto } from '../../api';
-import { Loader2, XCircle, Save, UserCircle, Clock, Upload } from 'lucide-react';
+import { Loader2, XCircle, Save, UserCircle, Clock, Upload, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -9,6 +9,7 @@ const StaffProfile = () => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [error, setError] = useState('');
 
@@ -45,17 +46,26 @@ const StaffProfile = () => {
   };
 
   const handleSave = async () => {
+    if (saving || uploadingPhoto) return;
     setSaving(true);
     try {
       const res = await updateStaffProfile({ bio, serviceIds: selectedServiceIds });
       setProfile(res.data);
-      setInitialServiceIds(selectedServiceIds);
+      setBio(res.data.bio || '');
+      setInitialServiceIds([...selectedServiceIds]);
+      setIsEditing(false);
       toast.success('Profile updated successfully');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancel = () => {
+    setBio(profile.bio || '');
+    setSelectedServiceIds([...initialServiceIds]);
+    setIsEditing(false);
   };
 
   const handlePhotoUpload = async (event) => {
@@ -91,7 +101,8 @@ const StaffProfile = () => {
   const hasChanges =
     profile &&
     (bio !== (profile.bio || '') ||
-      JSON.stringify(selectedServiceIds) !== JSON.stringify(initialServiceIds));
+      selectedServiceIds.length !== initialServiceIds.length ||
+      selectedServiceIds.some((id) => !initialServiceIds.includes(id)));
 
   if (loading) {
     return (
@@ -118,20 +129,42 @@ const StaffProfile = () => {
   );
 
   return (
-    <div className="p-6 lg:p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className={`p-6 lg:p-8 ${isEditing ? 'pb-28' : ''}`}>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
-          <p className="text-gray-500 text-sm mt-1">Edit your bio, services, and avatar</p>
+          <p className="text-gray-500 text-sm mt-1">
+            {isEditing ? 'Update your bio, services, and profile photo' : 'View your profile, services, and working hours'}
+          </p>
         </div>
-        {hasChanges && (
+        {isEditing ? (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={saving || uploadingPhoto}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
           <button
+            type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={!hasChanges || saving || uploadingPhoto}
             className="btn-primary flex items-center gap-2"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsEditing(true)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Pencil className="w-4 h-4" />
+            Edit Profile
           </button>
         )}
       </div>
@@ -162,7 +195,7 @@ const StaffProfile = () => {
             </div>
 
             {/* Avatar upload */}
-            <div className="mt-6">
+            {isEditing && <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Profile photo
               </label>
@@ -174,11 +207,12 @@ const StaffProfile = () => {
                   accept="image/jpeg,image/png,image/webp"
                   className="sr-only"
                   onChange={handlePhotoUpload}
-                  disabled={uploadingPhoto}
+                  disabled={uploadingPhoto || saving}
                 />
               </label>
               <p className="text-xs text-gray-400 mt-1">JPG, PNG, or WebP. Maximum 5MB.</p>
-            </div>
+              <p className="text-xs text-gray-500 mt-1">Photo uploads save immediately and are not undone by Cancel.</p>
+            </div>}
           </div>
         </div>
 
@@ -190,21 +224,39 @@ const StaffProfile = () => {
               <UserCircle className="w-5 h-5 text-primary-500" />
               Bio
             </h3>
+            {isEditing ? <>
+            <label htmlFor="staff-bio" className="sr-only">Bio</label>
             <textarea
+              id="staff-bio"
               className="input-field text-sm min-h-[120px] resize-y"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               placeholder="Tell clients about yourself, your experience, and what you specialize in..."
               maxLength={500}
+              disabled={saving || uploadingPhoto}
             />
             <p className="text-xs text-gray-400 mt-1 text-right">{bio.length}/500</p>
+            </> : (
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{profile.bio || 'No bio added yet.'}</p>
+            )}
           </div>
 
           {/* Services */}
           <div className="card p-6">
             <h3 className="font-semibold text-gray-900 mb-2">Services</h3>
-            <p className="text-sm text-gray-500 mb-4">Select the services you provide.</p>
-            {services.length === 0 ? (
+            <p className="text-sm text-gray-500 mb-4">
+              {isEditing ? 'Select the services you provide.' : 'Services you provide.'}
+            </p>
+            {!isEditing ? (
+              <div className="flex flex-wrap gap-2">
+                {services.filter((service) => initialServiceIds.includes(service._id)).map((service) => (
+                  <span key={service._id} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary-50 text-primary-700">
+                    {service.name}
+                  </span>
+                ))}
+                {initialServiceIds.length === 0 && <p className="text-sm text-gray-400">No services selected.</p>}
+              </div>
+            ) : services.length === 0 ? (
               <p className="text-sm text-gray-400">No active services are available.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -212,6 +264,8 @@ const StaffProfile = () => {
                   <button
                     key={service._id}
                     type="button"
+                    aria-pressed={selectedServiceIds.includes(service._id)}
+                    disabled={saving || uploadingPhoto}
                     onClick={() => toggleService(service._id)}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
                       selectedServiceIds.includes(service._id)
@@ -257,11 +311,11 @@ const StaffProfile = () => {
       </div>
 
       {/* Mobile save button */}
-      {hasChanges && (
+      {isEditing && (
         <div className="lg:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg z-30">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={!hasChanges || saving || uploadingPhoto}
             className="btn-primary w-full flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

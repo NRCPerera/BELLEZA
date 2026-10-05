@@ -158,7 +158,7 @@ const StaffSchedule = () => {
                   <p className="text-xs text-gray-500">Service</p>
                   <p className="font-medium text-sm">{selectedApt.service?.name}</p>
                   <p className="text-xs text-gray-400">
-                    {selectedApt.service?.durationMinutes}min · ${selectedApt.service?.price}
+                    {selectedApt.service?.durationMinutes}min · Rs {selectedApt.service?.price}
                   </p>
                 </div>
               </div>

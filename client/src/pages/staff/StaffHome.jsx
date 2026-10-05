@@ -128,7 +128,7 @@ const StaffOverview = () => {
                   <p className="text-sm text-gray-500 truncate">
                     {apt.service?.name} · {apt.service?.durationMinutes}min ·{' '}
                     <span className="text-primary-600 font-medium">
-                      ${apt.service?.price}
+                      Rs {apt.service?.price}
                     </span>
                   </p>
                 </div>
