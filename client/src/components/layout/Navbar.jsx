@@ -28,7 +28,7 @@ const Navbar = () => {
     `block px-4 py-2.5 text-sm rounded-lg ${isActive ? 'text-white bg-primary-700 font-semibold shadow-sm' : 'font-medium text-ink-700 hover:text-primary-700 hover:bg-primary-50'}`;
 
   return (
-    <nav className={`sticky top-0 z-50 border-b border-primary-200 transition-all duration-300 ${scrolled ? 'bg-primary-200 shadow-soft' : 'bg-primary-100'}`}>
+    <nav className={`sticky top-0 z-50 border-b border-gray-300 transition-all duration-300 ${scrolled ? 'bg-gray-300 shadow-soft' : 'bg-gray-200'}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-[72px] sm:h-20 gap-4">
           {/* Logo */}
@@ -86,7 +86,7 @@ const Navbar = () => {
 
       {/* Mobile Nav */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-primary-200 bg-primary-100 animate-fade-in">
+        <div className="md:hidden border-t border-gray-300 bg-gray-200 animate-fade-in">
           <div className="px-4 py-3 space-y-1">
             <NavLink to="/" end onClick={() => setMobileOpen(false)} className={mobileLinkClass}>Home</NavLink>
             <NavLink to="/services" onClick={() => setMobileOpen(false)} className={mobileLinkClass}>Services</NavLink>
