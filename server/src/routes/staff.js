@@ -4,6 +4,12 @@ const Staff = require('../models/Staff');
 const PortfolioPhoto = require('../models/PortfolioPhoto');
 const { syncStaffServices } = require('../services/staffServices');
 const { authenticate, authorize } = require('../middleware/auth');
+const { audit } = require('../services/auditLog');
+
+const staffFields = (input) => {
+  const { name, email, phone, bio, specialties, photo, workingHours, isActive } = input;
+  return Object.fromEntries(Object.entries({ name, email, phone, bio, specialties, photo, workingHours, isActive }).filter(([, value]) => value !== undefined));
+};
 
 let cloudinary;
 try {
@@ -123,8 +129,9 @@ router.post(
         return res.status(400).json({ message: 'Staff member with this email already exists' });
       }
 
-      const staff = await Staff.create(req.body);
+      const staff = await Staff.create(staffFields(req.body));
       await syncStaffServices(staff, req.body.serviceIds);
+      audit('admin.staff_created', { actor: req.user._id, targetType: 'staff', targetId: staff._id });
       res.status(201).json(staff);
     } catch (error) {
       console.error('Create staff error:', error);
@@ -138,7 +145,8 @@ router.post(
 // @access  Admin
 router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const { serviceIds, ...staffUpdates } = req.body;
+    const { serviceIds } = req.body;
+    const staffUpdates = staffFields(req.body);
     const staff = await Staff.findByIdAndUpdate(req.params.id, staffUpdates, {
       new: true,
       runValidators: true,
@@ -149,6 +157,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
     }
 
     await syncStaffServices(staff, serviceIds);
+    audit('admin.staff_updated', { actor: req.user._id, targetType: 'staff', targetId: staff._id });
     res.json(staff);
   } catch (error) {
     console.error('Update staff error:', error);
@@ -170,6 +179,7 @@ router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
     if (!staff) {
       return res.status(404).json({ message: 'Staff member not found' });
     }
+    audit('admin.staff_deactivated', { actor: req.user._id, targetType: 'staff', targetId: staff._id });
 
     // Clean up portfolio items from Cloudinary and DB
     try {

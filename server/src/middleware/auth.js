@@ -1,31 +1,30 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { csrfProtection } = require('./security');
 
 // Protect routes - verify JWT token
 const authenticate = async (req, res, next) => {
   let token;
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    token = req.headers.authorization.split(' ')[1];
-  }
-  token = token || req.cookies?.auth_token;
+  token = req.cookies?.auth_token;
 
   if (!token) {
-    return res.status(401).json({ message: 'Not authorized, no token' });
+    return res.status(401).json({ message: 'Authentication required' });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    req.user = await User.findById(decoded.id).select('+sessionVersion +csrfToken');
     if (!req.user) {
-      return res.status(401).json({ message: 'User not found' });
+      return res.status(401).json({ message: 'Authentication required' });
     }
-    next();
+    if (decoded.sessionVersion !== req.user.sessionVersion) return res.status(401).json({ message: 'Authentication required' });
+    if (req.user.mustChangePassword && !req.originalUrl.endsWith('/auth/me') && !req.originalUrl.endsWith('/auth/change-password')) {
+      return res.status(403).json({ message: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' });
+    }
+    return csrfProtection(req, res, next);
   } catch (error) {
-    return res.status(401).json({ message: 'Not authorized, token failed' });
+    return res.status(401).json({ message: 'Authentication required' });
   }
 };
 

@@ -3,6 +3,10 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticate } = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { audit } = require('../services/auditLog');
 
 const router = express.Router();
 
@@ -11,13 +15,30 @@ const authCookieOptions = () => ({
   secure: process.env.NODE_ENV === 'production',
   sameSite: process.env.COOKIE_SAME_SITE || 'lax',
   ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
-  maxAge: 30 * 24 * 60 * 60 * 1000,
+  maxAge: 8 * 60 * 60 * 1000,
+});
+
+const csrfCookieOptions = () => ({
+  httpOnly: false,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
+  maxAge: 8 * 60 * 60 * 1000,
 });
 
 // Generate JWT
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+const generateToken = (user) => {
+  return jwt.sign({ id: user._id, sessionVersion: user.sessionVersion }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '8h' });
 };
+
+const passwordPolicy = body('newPassword')
+  .isString().isLength({ min: 12, max: 128 }).withMessage('Password must be 12 to 128 characters')
+  .matches(/[a-z]/).withMessage('Password must include a lowercase letter')
+  .matches(/[A-Z]/).withMessage('Password must include an uppercase letter')
+  .matches(/[0-9]/).withMessage('Password must include a number');
+
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many sign-in attempts. Please try again later.' } });
+const dummyHash = bcrypt.hashSync('not-a-real-password', 12);
 
 const publicUser = (user) => ({
   id: user._id,
@@ -48,6 +69,7 @@ router.post(
 // @access  Public
 router.post(
   '/login',
+  loginLimiter,
   [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),
@@ -61,26 +83,42 @@ router.post(
     try {
       const { email, password } = req.body;
 
-      const user = await User.findOne({ email }).select('+password');
-      if (!user) {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const user = await User.findOne({ email: normalizedEmail }).select('+password +sessionVersion +csrfToken +failedLoginAttempts +lockUntil');
+      if (!user || user.role === 'customer') {
+        await bcrypt.compare(password, dummyHash);
+        await audit('auth.login_failed', { metadata: { email: normalizedEmail, reason: 'invalid_credentials' } });
         return res.status(401).json({ message: 'Invalid email or password' });
       }
+      if (user.lockUntil && user.lockUntil > new Date()) return res.status(401).json({ message: 'Invalid email or password' });
 
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
+        user.failedLoginAttempts += 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+          user.failedLoginAttempts = 0;
+        }
+        await user.save({ validateBeforeSave: false });
+        await audit('auth.login_failed', { actor: user._id, metadata: { reason: 'invalid_credentials' } });
         return res.status(401).json({ message: 'Invalid email or password' });
       }
-
-      // Customer login removed: guest booking via mobile. Staff/admin only.
-      if (user.role === 'customer') {
-        return res.status(403).json({ message: 'Customer login is disabled. Book as a guest with your mobile number.' });
+      user.failedLoginAttempts = 0;
+      user.lockUntil = null;
+      // Upgrade hashes created before the cost-12 policy on successful sign-in.
+      // Legacy weak passwords are instead forced through the password-change flow.
+      if (bcrypt.getRounds(user.password) < 12) {
+        if (password.length >= 12) user.password = password;
+        else user.mustChangePassword = true;
       }
-
-      const token = generateToken(user._id);
+      user.csrfToken = crypto.randomBytes(32).toString('hex');
+      await user.save({ validateBeforeSave: false });
+      const token = generateToken(user);
       res.cookie('auth_token', token, authCookieOptions());
+      res.cookie('csrf_token', user.csrfToken, csrfCookieOptions());
+      audit('auth.login_success', { actor: user._id, metadata: { role: user.role } });
 
       res.json({
-        token,
         user: publicUser(user),
       });
     } catch (error) {
@@ -92,9 +130,13 @@ router.post(
 
 // @route   POST /api/auth/logout
 // @desc    Clear the API authentication cookie
-router.post('/logout', (req, res) => {
+router.post('/logout', authenticate, async (req, res) => {
+  await User.findByIdAndUpdate(req.user._id, { $inc: { sessionVersion: 1 }, $set: { csrfToken: '' } });
   const { maxAge, ...options } = authCookieOptions();
   res.clearCookie('auth_token', options);
+  const { maxAge: csrfMaxAge, ...csrfOptions } = csrfCookieOptions();
+  res.clearCookie('csrf_token', csrfOptions);
+  audit('auth.logout', { actor: req.user._id });
   res.json({ message: 'Logged out' });
 });
 
@@ -113,9 +155,7 @@ router.post(
   authenticate,
   [
     body('currentPassword').notEmpty().withMessage('Current password is required'),
-    body('newPassword')
-      .isLength({ min: 6 })
-      .withMessage('New password must be at least 6 characters'),
+    passwordPolicy,
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -124,7 +164,7 @@ router.post(
     }
 
     try {
-      const user = await User.findById(req.user._id).select('+password');
+      const user = await User.findById(req.user._id).select('+password +sessionVersion +csrfToken');
       const isMatch = await user.comparePassword(req.body.currentPassword);
 
       if (!isMatch) {
@@ -133,7 +173,13 @@ router.post(
 
       user.password = req.body.newPassword;
       user.mustChangePassword = false;
+      user.sessionVersion += 1;
+      user.csrfToken = crypto.randomBytes(32).toString('hex');
       await user.save();
+      const token = generateToken(user);
+      res.cookie('auth_token', token, authCookieOptions());
+      res.cookie('csrf_token', user.csrfToken, csrfCookieOptions());
+      audit('auth.password_changed', { actor: user._id });
 
       res.json({
         message: 'Password changed successfully',

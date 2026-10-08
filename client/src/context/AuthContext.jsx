@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { getMe } from '../api';
+import { getMe, logout as logoutRequest } from '../api';
 
 const AuthContext = createContext(null);
 
@@ -14,31 +14,15 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      getMe()
-        .then((res) => {
-          setUser(res.data);
-        })
-        .catch(() => {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    getMe().then((res) => setUser(res.data)).catch(() => setUser(null)).finally(() => setLoading(false));
   }, []);
 
-  const login = (userData, token) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
+  const login = (userData) => {
     setUser(userData);
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const logout = async () => {
+    try { await logoutRequest(); } catch (_) { /* Session may already have expired. */ }
     setUser(null);
   };
 

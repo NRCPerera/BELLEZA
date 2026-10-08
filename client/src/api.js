@@ -7,11 +7,13 @@ const API = axios.create({
   withCredentials: true,
 });
 
-// Attach JWT token to every request
+const csrfToken = () => document.cookie.split('; ').find((cookie) => cookie.startsWith('csrf_token='))?.split('=').slice(1).join('');
+
+// Cookie sessions are httpOnly; CSRF token is sent on state-changing requests.
 API.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase())) {
+    const token = csrfToken();
+    if (token) config.headers['X-CSRF-Token'] = token;
   }
   return config;
 });
@@ -24,8 +26,6 @@ API.interceptors.response.use(
       error.config?.url?.includes(path)
     );
     if (error.response?.status === 401 && !isCredentialCheck) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
       // Only redirect if already inside the hidden staff/admin portal
       const path = window.location.pathname;
       const inPortal = path.startsWith('/admin') || path.startsWith('/staff');
@@ -42,6 +42,7 @@ export const register = (data) => API.post('/auth/register', data);
 export const login = (data) => API.post('/auth/login', data);
 export const getMe = () => API.get('/auth/me');
 export const changePassword = (data) => API.post('/auth/change-password', data);
+export const logout = () => API.post('/auth/logout');
 
 // Services
 export const getServices = () => API.get('/services');

@@ -4,8 +4,15 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const morgan = require('morgan');
+const helmet = require('helmet');
+const hpp = require('hpp');
+const mongoSanitize = require('express-mongo-sanitize');
+const rateLimit = require('express-rate-limit');
+const { loadEnv } = require('./config/env');
+const { rejectNoSqlOperators } = require('./middleware/security');
 
 dotenv.config();
+const env = loadEnv();
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -18,6 +25,16 @@ const clientOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
 // Render terminates TLS before forwarding requests to this service.
 if (isProduction) app.set('trust proxy', 1);
 
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: { directives: {
+    defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:', 'https://res.cloudinary.com'], mediaSrc: ["'self'", 'https://res.cloudinary.com'],
+    connectSrc: ["'self'", ...clientOrigins], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'none'"], formAction: ["'self'"], upgradeInsecureRequests: isProduction ? [] : null,
+  }},
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  strictTransportSecurity: isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+}));
 app.use(morgan(isProduction ? 'combined' : 'dev', {
   skip: (req) => req.path === '/health' || req.path === '/api/health',
 }));
@@ -31,7 +48,12 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false, limit: '20kb' }));
 app.use(cookieParser());
+app.use(mongoSanitize({ replaceWith: '_' }));
+app.use(rejectNoSqlOperators);
+app.use(hpp());
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many requests. Please try again later.' } }));
 
 const healthCheck = (req, res) => {
   const databaseReady = mongoose.connection.readyState === 1;
@@ -100,11 +122,7 @@ process.once('SIGTERM', () => shutdown('SIGTERM'));
 process.once('SIGINT', () => shutdown('SIGINT'));
 
 const start = async () => {
-  if (!process.env.MONGODB_URI || !process.env.JWT_SECRET) {
-    throw new Error('MONGODB_URI and JWT_SECRET must be configured');
-  }
-
-  const connection = await mongoose.connect(process.env.MONGODB_URI);
+  const connection = await mongoose.connect(env.MONGODB_URI);
   console.log(`MongoDB connected to ${connection.connection.host}/${connection.connection.name}`);
   server = app.listen(port, '0.0.0.0', () => console.log(`API listening on port ${port}`));
 };

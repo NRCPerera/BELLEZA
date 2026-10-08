@@ -98,7 +98,7 @@ const getAppointmentsForDay = (staffId, dayKey, dateInput, extra = {}) => {
 };
 
 // Serialize concurrent booking writes per staff-day (works across instances)
-const withBookingLock = async (staffId, dayKey, fn) => {
+const legacyWithBookingLock = async (staffId, dayKey, fn) => {
   const key = `booking:${staffId}:${dayKey}`;
   const expiresAt = new Date(Date.now() + 10000);
   try {
@@ -110,6 +110,30 @@ const withBookingLock = async (staffId, dayKey, fn) => {
     } else {
       throw err;
     }
+  }
+  try {
+    return await fn();
+  } finally {
+    await BookingLock.deleteOne({ key }).catch(() => {});
+  }
+};
+
+const withBookingLock = async (staffId, dayKey, fn) => {
+  const key = `booking:${staffId}:${dayKey}`;
+  let acquired = false;
+  for (let attempt = 0; attempt < 20 && !acquired; attempt += 1) {
+    try {
+      await BookingLock.create({ key, expiresAt: new Date(Date.now() + 10000) });
+      acquired = true;
+    } catch (err) {
+      if (err.code !== 11000) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 100 + Math.floor(Math.random() * 100)));
+    }
+  }
+  if (!acquired) {
+    const err = new Error('Booking is busy. Please try again.');
+    err.statusCode = 429;
+    throw err;
   }
   try {
     return await fn();

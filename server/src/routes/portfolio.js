@@ -185,7 +185,7 @@ router.get(
 );
 
 // @route   POST /api/staff/me/portfolio
-// @desc    Upload portfolio photos + videos (max 30 items combined)
+// @desc    Upload portfolio photos and videos (max 30 items combined)
 // @access  Staff
 router.post(
   '/',

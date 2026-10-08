@@ -20,7 +20,7 @@ const StaffChangePassword = () => {
     setSubmitting(true);
     try {
       const res = await changePasswordAPI({ currentPassword, newPassword });
-      login(res.data.user, localStorage.getItem('token'));
+      login(res.data.user);
       toast.success('Password changed successfully');
       reset();
     } catch (err) {

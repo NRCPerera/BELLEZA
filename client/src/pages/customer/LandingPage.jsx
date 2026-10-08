@@ -361,23 +361,36 @@ export default function LandingPage() {
             <div className="mx-auto h-12 w-12 rounded-2xl bg-primary-100 flex items-center justify-center">
               <MapPin className="h-6 w-6 text-primary-700" />
             </div>
-            <h3 className="mt-5 font-bold text-ink-900">Our Location</h3>
-            <p className="mt-2 text-sm text-ink-500">123 Beauty Lane, Suite 100<br />New York, NY 10001</p>
+            <h3 className="mt-5 font-bold text-ink-900">
+              <a
+                href="https://maps.app.goo.gl/N5Hqk2tJuLvReECs9?g_st=aw"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-600"
+                aria-label="Our Location on Google Maps (opens in a new tab)"
+              >
+                Our Location
+              </a>
+            </h3>
+            <p className="mt-2 text-sm text-ink-500">No 160 Ambalamulla,<br />Seeduwa</p>
+            <a href="https://maps.app.goo.gl/N5Hqk2tJuLvReECs9?g_st=aw" target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-primary-700 hover:text-primary-600" aria-label="Get directions on Google Maps (opens in a new tab)">
+              <MapPin className="h-4 w-4" /> Get directions
+            </a>
           </div>
           <div className="card p-8 text-center">
             <div className="mx-auto h-12 w-12 rounded-2xl bg-highlight-100 flex items-center justify-center">
               <Clock className="h-6 w-6 text-highlight-600" />
             </div>
             <h3 className="mt-5 font-bold text-ink-900">Opening Hours</h3>
-            <p className="mt-2 text-sm text-ink-500">Mon–Fri: 9 AM – 6 PM<br />Sat: 10 AM – 4 PM<br />Sun: Closed</p>
+            <p className="mt-2 text-sm text-ink-500">Tuesday - Friday: 9:30 AM – 9:00 PM<br />Saturday, Sunday: 9:30 AM – 10:00 PM<br />Monday: 10:00 AM – 9:00 PM</p>
           </div>
           <div className="card p-8 text-center">
             <div className="mx-auto h-12 w-12 rounded-2xl bg-accent-100 flex items-center justify-center">
               <Phone className="h-6 w-6 text-accent-600" />
             </div>
             <h3 className="mt-5 font-bold text-ink-900">Get in Touch</h3>
-            <p className="mt-2 text-sm text-ink-500">(555) 123-4567<br />hello@belleza.com</p>
-            <a href="https://wa.me/15551234567" className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-primary-700 hover:text-primary-600">
+            <p className="mt-2 text-sm text-ink-500">0772809117<br />hello@belleza.com</p>
+            <a href="https://wa.me/+94772809117" className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-primary-700 hover:text-primary-600">
               <MessageCircle className="h-4 w-4" /> WhatsApp us
             </a>
           </div>

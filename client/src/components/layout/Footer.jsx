@@ -31,15 +31,15 @@ const Footer = () => {
             <ul className="space-y-3">
               <li className="flex items-center gap-2.5">
                 <Phone className="w-4 h-4 text-highlight-400 flex-shrink-0" />
-                <span className="text-sm text-primary-300">(555) 123-4567</span>
+                <span className="text-sm text-primary-300">0772809117</span>
               </li>
               <li className="flex items-center gap-2.5">
                 <Mail className="w-4 h-4 text-highlight-400 flex-shrink-0" />
-                <span className="text-sm text-primary-300">hello@belleza.com</span>
+                <span className="text-sm text-primary-300">hello@belleza.lk</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <MapPin className="w-4 h-4 text-highlight-400 flex-shrink-0 mt-0.5" />
-                <span className="text-sm text-primary-300">123 Beauty Lane,<br />Suite 100, New York, NY</span>
+                <span className="text-sm text-primary-300">No 160 Ambalamulla,<br />Seeduwa</span>
               </li>
             </ul>
           </div>
@@ -48,24 +48,21 @@ const Footer = () => {
           <div>
             <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">Hours</h3>
             <ul className="space-y-2">
-              <li className="flex justify-between text-sm">
-                <span className="text-primary-300">Mon - Fri</span>
-                <span className="text-primary-200">9:00 AM - 6:00 PM</span>
+              <li className="flex justify-between gap-3 text-sm">
+                <span className="text-primary-300">Tuesday - Friday</span>
+                <span className="text-primary-200 whitespace-nowrap">09.30 - 21.00</span>
               </li>
-              <li className="flex justify-between text-sm">
-                <span className="text-primary-300">Saturday</span>
-                <span className="text-primary-200">10:00 AM - 4:00 PM</span>
+              <li className="flex justify-between gap-3 text-sm">
+                <span className="text-primary-300">Saturday, Sunday</span>
+                <span className="text-primary-200 whitespace-nowrap">09.30 - 22.00</span>
               </li>
-              <li className="flex justify-between text-sm">
-                <span className="text-primary-300">Sunday</span>
-                <span className="text-primary-200">Closed</span>
+              <li className="flex justify-between gap-3 text-sm">
+                <span className="text-primary-300">Monday</span>
+                <span className="text-primary-200 whitespace-nowrap">10.00 - 21.00</span>
               </li>
             </ul>
             <div className="flex gap-3 mt-5">
-              <a href="#" className="w-9 h-9 bg-primary-800 hover:bg-accent-500 rounded-lg flex items-center justify-center transition-colors">
-                <Instagram className="w-4 h-4" />
-              </a>
-              <a href="#" className="w-9 h-9 bg-primary-800 hover:bg-accent-500 rounded-lg flex items-center justify-center transition-colors">
+              <a href="https://www.facebook.com/share/1FADVSZ7q3/" target="_blank" rel="noopener noreferrer" aria-label="Facebook (opens in a new tab)" className="w-9 h-9 bg-primary-800 hover:bg-accent-500 rounded-lg flex items-center justify-center transition-colors">
                 <Facebook className="w-4 h-4" />
               </a>
             </div>

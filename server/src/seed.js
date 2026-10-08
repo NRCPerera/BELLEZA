@@ -75,12 +75,13 @@ const seed = async () => {
     // ============================================================
 
     const defaultWorkingHours = [
-      { day: 'Monday', start: '09:00', end: '18:00' },
-      { day: 'Tuesday', start: '09:00', end: '18:00' },
-      { day: 'Wednesday', start: '09:00', end: '18:00' },
-      { day: 'Thursday', start: '09:00', end: '18:00' },
-      { day: 'Friday', start: '09:00', end: '18:00' },
-      { day: 'Saturday', start: '10:00', end: '16:00' },
+      { day: 'Monday', start: '10:00', end: '21:00' },
+      { day: 'Tuesday', start: '09:30', end: '21:00' },
+      { day: 'Wednesday', start: '09:30', end: '21:00' },
+      { day: 'Thursday', start: '09:30', end: '21:00' },
+      { day: 'Friday', start: '09:30', end: '21:00' },
+      { day: 'Saturday', start: '09:30', end: '22:00' },
+      { day: 'Sunday', start: '09:30', end: '22:00' },
     ];
 
     // ============================================================

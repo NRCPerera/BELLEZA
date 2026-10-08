@@ -230,8 +230,8 @@ router.post(
     body('email').optional().isEmail().withMessage('Valid email is required'),
     body('staff.email').optional().isEmail().withMessage('Valid staff email is required'),
     body('tempPassword')
-      .isLength({ min: 6 })
-      .withMessage('Temporary password must be at least 6 characters'),
+      .isLength({ min: 12 })
+      .withMessage('Temporary password must be at least 12 characters'),
   ],
   async (req, res) => {
     const errors = validationResult(req);

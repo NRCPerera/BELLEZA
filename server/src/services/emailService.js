@@ -1,5 +1,6 @@
 // Resend-only email service (https://resend.com)
 // Requires: RESEND_API_KEY, EMAIL_FROM (verified sender/domain in Resend dashboard)
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 
 const sendWithResend = async (mailOptions) => {
   const response = await fetch('https://api.resend.com/emails', {
@@ -27,7 +28,8 @@ const sendWithResend = async (mailOptions) => {
 const trackUrl = (bookingRef) => {
   if (!bookingRef) return '';
   const base = String(process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/+$/, '');
-  return base ? `${base}/t/${bookingRef}` : `/t/${bookingRef}`;
+  const ref = String(bookingRef).replace(/[^A-Z0-9-]/gi, '');
+  return base ? `${base}/t/${encodeURIComponent(ref)}` : `/t/${encodeURIComponent(ref)}`;
 };
 
 // CTA button that renders reliably in email clients
@@ -70,6 +72,7 @@ const sendEmail = async (mailOptions) => {
 
 const sendBookingConfirmation = async (appointment) => {
   try {
+    appointment = Object.fromEntries(Object.entries(appointment).map(([key, value]) => [key, escapeHtml(value)]));
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: appointment.customerEmail,
@@ -148,6 +151,7 @@ const sendBookingConfirmation = async (appointment) => {
 
 const sendStatusUpdateEmail = async (appointment, newStatus) => {
   try {
+    appointment = Object.fromEntries(Object.entries(appointment).map(([key, value]) => [key, escapeHtml(value)]));
     const statusMessages = {
       confirmed: {
         subject: 'Your Luxe Salon appointment is confirmed! ✅',

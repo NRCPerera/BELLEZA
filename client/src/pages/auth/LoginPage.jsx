@@ -23,7 +23,7 @@ const LoginPage = ({ staffOnly = false }) => {
         toast.error('Customer login is disabled. Please book as a guest.');
         return;
       }
-      login(res.data.user, res.data.token);
+      login(res.data.user);
       toast.success(`Welcome back, ${res.data.user.name}!`);
       navigate(
         res.data.user.mustChangePassword

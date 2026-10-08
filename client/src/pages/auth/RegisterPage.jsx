@@ -17,7 +17,7 @@ const RegisterPage = () => {
     setLoading(true);
     try {
       const res = await registerAPI(data);
-      login(res.data.user, res.data.token);
+      login(res.data.user);
       toast.success('Account created! Welcome to Belleza.');
       navigate('/');
     } catch (err) {
