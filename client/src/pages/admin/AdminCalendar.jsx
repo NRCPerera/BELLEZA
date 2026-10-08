@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Calendar as BigCalendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -30,6 +30,7 @@ const AdminCalendar = () => {
       .finally(() => setLoading(false));
   };
 
+  const events = useMemo(() => {
   const blockEvents = blocks.map((b) => {
     const dateStr = new Date(b.date).toISOString().split('T')[0];
     return {
@@ -41,7 +42,7 @@ const AdminCalendar = () => {
     };
   });
 
-  const events = [
+  return [
     ...appointments.map((apt) => {
       const dateStr = new Date(apt.date).toISOString().split('T')[0];
       return {
@@ -54,6 +55,7 @@ const AdminCalendar = () => {
     }),
     ...blockEvents,
   ];
+  }, [appointments, blocks]);
 
   const handleSelectEvent = (event) => {
     if (event.resource?.isBlock) {

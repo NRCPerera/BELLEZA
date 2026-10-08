@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { ArrowRight, ArrowUpRight, Camera, Clock, Film, Heart, Scissors, ShieldCheck, Sparkles, Star, MapPin, Phone, MessageCircle, Play } from 'lucide-react';
 import { getRecentPortfolio, getServices, getStaff } from '../../api';
 import Lightbox from '../../components/ui/Lightbox';
 import StaffCard from '../../components/ui/StaffCard';
 import { CardSkeleton, Skeleton } from '../../components/ui/Skeleton';
-import { isVideoItem, photoThumb, videoPoster, formatDuration } from '../../utils/media';
+import { isVideoItem, photoPlaceholder, photoThumb, videoPoster, formatDuration } from '../../utils/media';
 
 const gallerySrc = (item) =>
   isVideoItem(item) ? videoPoster(item, 800) : photoThumb(item?.url, 800);
@@ -20,11 +21,15 @@ const spanClass = (index) => {
 };
 
 export default function LandingPage() {
-  const [data, setData] = useState({ services: [], staff: [], work: [] });
-  const [loading, setLoading] = useState(true);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [workFilter, setWorkFilter] = useState('all'); // all | photo | video
-  useEffect(() => { Promise.all([getServices(), getStaff(), getRecentPortfolio(12)]).then(([services, staff, work]) => setData({ services: services.data.slice(0, 4), staff: staff.data.slice(0, 4), work: work.data })).catch(console.error).finally(() => setLoading(false)); }, []);
+  const results = useQueries({ queries: [
+    { queryKey: ['services'], queryFn: ({ signal }) => getServices({ signal }).then(r => r.data) },
+    { queryKey: ['staff'], queryFn: ({ signal }) => getStaff({ signal }).then(r => r.data) },
+    { queryKey: ['portfolio', 'recent', 12], queryFn: ({ signal }) => getRecentPortfolio(12, { signal }).then(r => r.data) },
+  ] });
+  const data = { services: (results[0].data || []).slice(0, 4), staff: (results[1].data || []).slice(0, 4), work: results[2].data || [] };
+  const loading = results.some((result) => result.isPending);
 
   const filteredWork = useMemo(() => {
     if (workFilter === 'photo') return data.work.filter((w) => !isVideoItem(w));
@@ -63,7 +68,7 @@ export default function LandingPage() {
         </div>
         <div className="relative mx-auto w-full max-w-md">
           <div className="aspect-[4/5] overflow-hidden rounded-t-[9rem] rounded-b-[2rem] bg-accent-200 shadow-2xl">
-            <img className="h-full w-full object-cover" src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=900&q=85" alt="Salon styling experience" />
+            <img className="h-full w-full object-cover" src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=900&q=85" srcSet="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=480&q=80 480w, https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=900&q=85 900w" sizes="(min-width: 1024px) 448px, 90vw" width="900" height="1125" fetchPriority="high" loading="eager" alt="Salon styling experience" />
           </div>
           <div className="absolute -bottom-5 -left-4 rounded-2xl bg-surface p-4 text-ink-900 shadow-float">
             <p className="eyebrow">Today at Belleza</p>
@@ -209,10 +214,15 @@ export default function LandingPage() {
                   <button
                     key={item._id}
                     onClick={() => setLightboxIndex(index)}
+                    style={!isVideo ? { backgroundImage: `url(${photoPlaceholder(item.url)})`, backgroundSize: 'cover' } : undefined}
                     className={`group relative overflow-hidden rounded-3xl bg-white/10 text-left ring-1 ring-white/10 transition duration-300 hover:ring-white/30 ${spanClass(index)}`}
                   >
                     <img
                       src={gallerySrc(item)}
+                      srcSet={isVideo ? undefined : [400, 800, 1200].map(width => `${photoThumb(item.url, width)} ${width}w`).join(', ')}
+                      sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+                      width={item.width || 800}
+                      height={item.height || 1000}
                       alt={item.caption || 'Salon portfolio work'}
                       loading={index > 1 ? 'lazy' : 'eager'}
                       decoding="async"

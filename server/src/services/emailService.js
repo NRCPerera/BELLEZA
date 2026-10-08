@@ -24,6 +24,19 @@ const sendWithResend = async (mailOptions) => {
   return data;
 };
 
+const sendWithRetry = async (mailOptions, attempts = 3) => {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await sendWithResend(mailOptions);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** (attempt - 1))));
+    }
+  }
+  throw lastError;
+};
+
 // Absolute track-link URL for emails (view-only booking page: /t/:bookingRef)
 const trackUrl = (bookingRef) => {
   if (!bookingRef) return '';
@@ -67,7 +80,7 @@ const sendEmail = async (mailOptions) => {
     console.warn('Email not sent: no recipient');
     return { skipped: true };
   }
-  return sendWithResend(mailOptions);
+  return sendWithRetry(mailOptions);
 };
 
 const sendBookingConfirmation = async (appointment) => {

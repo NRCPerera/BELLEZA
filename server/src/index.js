@@ -3,13 +3,15 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
-const morgan = require('morgan');
+const compression = require('compression');
+const pinoHttp = require('pino-http');
 const helmet = require('helmet');
 const hpp = require('hpp');
 const mongoSanitize = require('express-mongo-sanitize');
 const rateLimit = require('express-rate-limit');
 const { loadEnv } = require('./config/env');
 const { rejectNoSqlOperators } = require('./middleware/security');
+const logger = require('./services/logger');
 
 dotenv.config();
 const env = loadEnv();
@@ -22,10 +24,25 @@ const clientOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+// Log only queries slow enough to act on; never log parameter values.
+mongoose.plugin((schema) => {
+  schema.pre(/^find|^count|^aggregate/, function queryTimer() { this._startedAt = process.hrtime.bigint(); });
+  schema.post(/^find|^count|^aggregate/, function queryTiming(_result, next) {
+    if (this._startedAt) {
+      const durationMs = Number(process.hrtime.bigint() - this._startedAt) / 1e6;
+      if (durationMs >= Number(process.env.SLOW_QUERY_MS || 100)) {
+        logger.warn({ model: this.model?.modelName, operation: this.op, durationMs: Math.round(durationMs) }, 'slow MongoDB query');
+      }
+    }
+    next();
+  });
+});
+
 // Render terminates TLS before forwarding requests to this service.
 if (isProduction) app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
+app.set('etag', 'strong');
 app.use(helmet({
   contentSecurityPolicy: { directives: {
     defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"],
@@ -35,9 +52,15 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   strictTransportSecurity: isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
 }));
-app.use(morgan(isProduction ? 'combined' : 'dev', {
-  skip: (req) => req.path === '/health' || req.path === '/api/health',
+app.use(pinoHttp({
+  logger,
+  autoLogging: { ignore: (req) => req.url === '/health' || req.url === '/api/health' },
+  serializers: {
+    req: (req) => ({ id: req.id, method: req.method, url: req.url }),
+    res: (res) => ({ statusCode: res.statusCode }),
+  },
 }));
+app.use(compression({ threshold: 1024 }));
 app.use(cors({
   origin(origin, callback) {
     if (!origin || clientOrigins.includes(origin)) return callback(null, true);
@@ -57,15 +80,16 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, l
 
 const healthCheck = (req, res) => {
   const databaseReady = mongoose.connection.readyState === 1;
+  res.set('Cache-Control', 'no-store');
   res.status(databaseReady ? 200 : 503).json({ status: databaseReady ? 'ok' : 'degraded' });
 };
 
 mongoose.connection.on('disconnected', () => {
-  console.warn('MongoDB disconnected');
+  logger.warn('MongoDB disconnected');
 });
 
 mongoose.connection.on('error', (error) => {
-  console.error(`MongoDB connection error: ${error.message}`);
+  logger.error({ err: error }, 'MongoDB connection error');
 });
 
 app.get('/health', healthCheck);
@@ -86,9 +110,9 @@ app.use((err, req, res, next) => {
 
   // Do not log request bodies, headers, connection strings, or stack traces in production.
   if (isProduction) {
-    console.error(`Request failed: ${req.method} ${req.path} (${status})`);
+    req.log.error({ status }, 'request failed');
   } else {
-    console.error(err);
+    req.log.error({ err }, 'request failed');
   }
 
   res.status(status).json({
@@ -103,7 +127,7 @@ let shuttingDown = false;
 const shutdown = async (signal) => {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`${signal} received; shutting down`);
+  logger.info({ signal }, 'shutting down');
 
   const forceExit = setTimeout(() => process.exit(1), 10000);
   forceExit.unref();
@@ -113,7 +137,7 @@ const shutdown = async (signal) => {
     await mongoose.disconnect();
     process.exit(0);
   } catch (error) {
-    console.error('Shutdown failed');
+    logger.error({ err: error }, 'shutdown failed');
     process.exit(1);
   }
 };
@@ -122,12 +146,18 @@ process.once('SIGTERM', () => shutdown('SIGTERM'));
 process.once('SIGINT', () => shutdown('SIGINT'));
 
 const start = async () => {
-  const connection = await mongoose.connect(env.MONGODB_URI);
-  console.log(`MongoDB connected to ${connection.connection.host}/${connection.connection.name}`);
-  server = app.listen(port, '0.0.0.0', () => console.log(`API listening on port ${port}`));
+  const connection = await mongoose.connect(env.MONGODB_URI, {
+    maxPoolSize: env.MONGODB_MAX_POOL_SIZE,
+    minPoolSize: 0,
+    serverSelectionTimeoutMS: env.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+    maxIdleTimeMS: 60000,
+    autoIndex: !isProduction,
+  });
+  logger.info({ database: connection.connection.name }, 'MongoDB connected');
+  server = app.listen(port, '0.0.0.0', () => logger.info({ port }, 'API listening'));
 };
 
 start().catch((error) => {
-  console.error(`Startup failed: ${error.message}`);
+  logger.fatal({ err: error }, 'startup failed');
   process.exit(1);
 });

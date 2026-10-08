@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const Service = require('../models/Service');
 const { authenticate, authorize } = require('../middleware/auth');
 const { audit } = require('../services/auditLog');
+const { getOrSet, invalidatePrefix } = require('../services/cache');
 
 const router = express.Router();
 
@@ -11,7 +12,12 @@ const router = express.Router();
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const services = await Service.find({ isActive: true }).populate('assignedStaff', 'name specialties photo');
+    const services = await getOrSet('public:services', () => Service.find({ isActive: true })
+      .select('name category description durationMinutes price assignedStaff')
+      .populate('assignedStaff', 'name specialties photo')
+      .sort({ category: 1, name: 1 })
+      .lean(), 5 * 60 * 1000);
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
     res.json(services);
   } catch (error) {
     console.error('Get services error:', error);
@@ -24,7 +30,7 @@ router.get('/', async (req, res) => {
 // @access  Admin
 router.get('/all', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const services = await Service.find().populate('assignedStaff', 'name specialties photo');
+    const services = await Service.find().populate('assignedStaff', 'name specialties photo').lean();
     res.json(services);
   } catch (error) {
     console.error('Get all services error:', error);
@@ -37,7 +43,7 @@ router.get('/all', authenticate, authorize('admin'), async (req, res) => {
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const service = await Service.findById(req.params.id).populate('assignedStaff', 'name specialties photo');
+    const service = await Service.findById(req.params.id).populate('assignedStaff', 'name specialties photo').lean();
     if (!service) {
       return res.status(404).json({ message: 'Service not found' });
     }
@@ -76,6 +82,8 @@ router.post(
       });
       audit('admin.service_created', { actor: req.user._id, targetType: 'service', targetId: service._id });
       const populated = await service.populate('assignedStaff', 'name specialties photo');
+      invalidatePrefix('public:services');
+      invalidatePrefix('availability:');
       res.status(201).json(populated);
     } catch (error) {
       console.error('Create service error:', error);
@@ -101,6 +109,9 @@ router.put('/:id', authenticate, authorize('admin'), [body('name').optional().tr
       return res.status(404).json({ message: 'Service not found' });
     }
     audit('admin.service_updated', { actor: req.user._id, targetType: 'service', targetId: service._id });
+    invalidatePrefix('public:services');
+    invalidatePrefix('public:staff');
+    invalidatePrefix('availability:');
     res.json(service);
   } catch (error) {
     console.error('Update service error:', error);
@@ -123,6 +134,9 @@ router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
       return res.status(404).json({ message: 'Service not found' });
     }
     audit('admin.service_deactivated', { actor: req.user._id, targetType: 'service', targetId: service._id });
+    invalidatePrefix('public:services');
+    invalidatePrefix('public:staff');
+    invalidatePrefix('availability:');
     res.json({ message: 'Service deactivated', service });
   } catch (error) {
     console.error('Delete service error:', error);

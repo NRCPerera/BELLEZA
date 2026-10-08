@@ -43,10 +43,8 @@ const slotBlockSchema = new mongoose.Schema({
   },
 });
 
-slotBlockSchema.index({ staff: 1, dayKey: 1 });
-slotBlockSchema.index({ staff: 1, date: 1 });
-slotBlockSchema.index({ date: 1 });
-slotBlockSchema.index({ dayKey: 1 });
+slotBlockSchema.index({ dayKey: 1, staff: 1, startTime: 1 });
+slotBlockSchema.index({ date: 1, staff: 1 });
 
 // Auto-fill dayKey from date for legacy docs / direct creates
 slotBlockSchema.pre('validate', function (next) {

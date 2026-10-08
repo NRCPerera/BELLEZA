@@ -19,6 +19,11 @@ export const photoFull = (url) => {
   return url.replace('/upload/', '/upload/w_1600,f_auto,q_auto/');
 };
 
+export const photoPlaceholder = (url) => {
+  if (!url?.includes('cloudinary')) return '';
+  return url.replace('/upload/', '/upload/w_40,c_fill,e_blur:1000,f_auto,q_10/');
+};
+
 // Poster for a video item: prefer stored thumbnailUrl, else derive a
 // first-second frame from the video URL (no extra upload needed).
 export const videoPoster = (item, width = 600) => {

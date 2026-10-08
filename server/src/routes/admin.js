@@ -8,6 +8,7 @@ const { syncStaffServices } = require('../services/staffServices');
 const { body, validationResult } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth');
 const { timeToMinutes, dayBoundsUTC, toDayKey, isValidDayKey } = require('../services/slotUtils');
+const { invalidatePrefix } = require('../services/cache');
 
 const router = express.Router();
 
@@ -25,14 +26,12 @@ router.get('/stats', async (req, res) => {
     const endOfDay = new Date(today);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    const todayCount = await Appointment.countDocuments({
-      date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: 'cancelled' },
-    });
-
-    const totalCustomers = await User.countDocuments({ role: 'customer' });
-    const totalServices = await Service.countDocuments({ isActive: true });
-    const totalStaff = await Staff.countDocuments({ isActive: true });
+    const [todayCount, totalCustomers, totalServices, totalStaff] = await Promise.all([
+      Appointment.countDocuments({ date: { $gte: startOfDay, $lte: endOfDay }, status: { $ne: 'cancelled' } }),
+      User.countDocuments({ role: 'customer' }),
+      Service.countDocuments({ isActive: true }),
+      Staff.countDocuments({ isActive: true }),
+    ]);
 
     res.json({
       todayCount,
@@ -51,24 +50,14 @@ router.get('/stats', async (req, res) => {
 // @access  Admin
 router.get('/customers', async (req, res) => {
   try {
-    const legacyCustomers = await User.find({ role: 'customer' }).sort({ createdAt: -1 });
-
-    const legacyData = await Promise.all(
-      legacyCustomers.map(async (customer) => {
-        const bookingCount = await Appointment.countDocuments({ customer: customer._id });
-        return {
-          _id: customer._id,
-          name: customer.name,
-          email: customer.email,
-          phone: customer.phone,
-          totalBookings: bookingCount,
-          joinDate: customer.createdAt,
-          source: 'registered',
-        };
-      })
-    );
-
-    const guestAgg = await Appointment.aggregate([
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 200, 1), 500);
+    const [legacyData, guestAgg] = await Promise.all([User.aggregate([
+      { $match: { role: 'customer' } },
+      { $sort: { createdAt: -1 } },
+      { $limit: limit },
+      { $lookup: { from: 'appointments', localField: '_id', foreignField: 'customer', as: 'bookings' } },
+      { $project: { name: 1, email: 1, phone: 1, totalBookings: { $size: '$bookings' }, joinDate: '$createdAt', source: { $literal: 'registered' } } },
+    ]), Appointment.aggregate([
       { $match: { guestPhone: { $ne: '' } } },
       { $sort: { createdAt: -1 } },
       {
@@ -82,7 +71,8 @@ router.get('/customers', async (req, res) => {
         },
       },
       { $sort: { joinDate: -1 } },
-    ]);
+      { $limit: limit },
+    ])]);
 
     const guestData = guestAgg.map((g) => ({
       _id: `guest-${g._id}`,
@@ -95,7 +85,7 @@ router.get('/customers', async (req, res) => {
       source: 'guest',
     }));
 
-    res.json([...guestData, ...legacyData.filter((c) => c.totalBookings > 0 || true)]);
+    res.json([...guestData, ...legacyData].slice(0, limit));
   } catch (error) {
     console.error('Get customers error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -123,7 +113,9 @@ router.get('/customers/:id/appointments', async (req, res) => {
     const appointments = await Appointment.find(filter)
       .populate('staff', 'name photo')
       .populate('service', 'name category durationMinutes price')
-      .sort({ date: -1 });
+      .sort({ date: -1 })
+      .limit(200)
+      .lean();
 
     res.json(appointments);
   } catch (error) {
@@ -149,7 +141,9 @@ router.get('/blocks', async (req, res) => {
     if (req.query.staffId) filter.staff = req.query.staffId;
     const blocks = await SlotBlock.find(filter)
       .populate('staff', 'name')
-      .sort({ dayKey: 1, startTime: 1 });
+      .sort({ dayKey: 1, startTime: 1 })
+      .limit(500)
+      .lean();
     res.json(blocks);
   } catch (error) {
     console.error('Get blocks error:', error);
@@ -198,6 +192,7 @@ router.post(
         createdBy: req.user._id,
       });
       const populated = await block.populate('staff', 'name');
+      invalidatePrefix('availability:');
       res.status(201).json(populated);
     } catch (error) {
       console.error('Create block error:', error);
@@ -213,6 +208,7 @@ router.delete('/blocks/:id', async (req, res) => {
   try {
     const deleted = await SlotBlock.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ message: 'Block not found' });
+    invalidatePrefix('availability:');
     res.json({ message: 'Online booking resumed' });
   } catch (error) {
     console.error('Delete block error:', error);

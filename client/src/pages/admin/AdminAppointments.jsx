@@ -5,6 +5,7 @@ import Modal from '../../components/ui/Modal';
 import { Loader2, Filter, Eye, Search, X as XIcon, ChevronLeft, ChevronRight, AlertCircle, PauseCircle, PlayCircle } from 'lucide-react';
 import EmptyState from '../../components/ui/EmptyState';
 import toast from 'react-hot-toast';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 
@@ -23,9 +24,10 @@ const AdminAppointments = () => {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [blockSaving, setBlockSaving] = useState(false);
   const [blockForm, setBlockForm] = useState({ staffId: '', date: todayStr(), startTime: '', endTime: '', reason: '' });
+  const debouncedQuery = useDebouncedValue(query);
 
   useEffect(() => {
-    Promise.all([fetchAppointments(), getAllStaff().then(res => setStaffList(res.data))]).finally(() => setLoading(false));
+    getAllStaff().then(res => setStaffList(res.data)).catch(() => {});
   }, []);
 
   const fetchBlocks = async (date) => {
@@ -49,12 +51,14 @@ const AdminAppointments = () => {
       setAppointments(res.data); setError('');
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to load appointments.');
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => { fetchAppointments(); }, [filters]);
   useEffect(() => setPage(1), [query, filters]);
-  const filteredAppointments = appointments.filter(a => `${((a.guestName || a.customer?.name) || '—')} ${a.service?.name} ${a.staff?.name}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredAppointments = appointments.filter(a => `${((a.guestName || a.customer?.name) || '—')} ${a.service?.name} ${a.staff?.name}`.toLowerCase().includes(debouncedQuery.toLowerCase()));
   const pageSize = 8; const totalPages = Math.max(1, Math.ceil(filteredAppointments.length / pageSize)); const displayedAppointments = filteredAppointments.slice((page - 1) * pageSize, page * pageSize);
 
   const handleStatusChange = async (id, status) => {

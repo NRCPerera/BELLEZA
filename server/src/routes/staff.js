@@ -5,6 +5,7 @@ const PortfolioPhoto = require('../models/PortfolioPhoto');
 const { syncStaffServices } = require('../services/staffServices');
 const { authenticate, authorize } = require('../middleware/auth');
 const { audit } = require('../services/auditLog');
+const { getOrSet, invalidatePrefix } = require('../services/cache');
 
 const staffFields = (input) => {
   const { name, email, phone, bio, specialties, photo, workingHours, isActive } = input;
@@ -37,7 +38,7 @@ const addPortfolioPreviews = async (staff) => {
     byStaff.set(key, current);
   });
   return staff.map((member) => ({
-    ...member.toObject(),
+    ...(member.toObject ? member.toObject() : member),
     portfolioPreview: byStaff.get(member._id.toString()) || [],
   }));
 };
@@ -47,8 +48,12 @@ const addPortfolioPreviews = async (staff) => {
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const staff = await Staff.find({ isActive: true }).select('-user');
-    res.json(await addPortfolioPreviews(staff));
+    const staff = await getOrSet('public:staff', () => Staff.find({ isActive: true })
+      .select('name email phone bio specialties photo workingHours isActive createdAt')
+      .lean()
+      .then(addPortfolioPreviews), 5 * 60 * 1000);
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+    res.json(staff);
   } catch (error) {
     console.error('Get staff error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -60,7 +65,7 @@ router.get('/', async (req, res) => {
 // @access  Admin
 router.get('/all', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const staff = await Staff.find();
+    const staff = await Staff.find().lean();
     res.json(staff);
   } catch (error) {
     console.error('Get all staff error:', error);
@@ -80,7 +85,7 @@ router.get('/:id/portfolio', async (req, res) => {
         .sort({ order: 1, createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .select('url caption service order createdAt mediaType resourceType thumbnailUrl duration bytes width height'),
+        .select('url caption service order createdAt mediaType resourceType thumbnailUrl duration bytes width height').lean(),
       PortfolioPhoto.countDocuments({ staff: req.params.id }),
     ]);
     res.json({ photos, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
@@ -95,7 +100,7 @@ router.get('/:id/portfolio', async (req, res) => {
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    const staff = await Staff.findById(req.params.id).select('-user');
+    const staff = await Staff.findById(req.params.id).select('-user').lean();
     if (!staff) {
       return res.status(404).json({ message: 'Staff member not found' });
     }
@@ -132,6 +137,9 @@ router.post(
       const staff = await Staff.create(staffFields(req.body));
       await syncStaffServices(staff, req.body.serviceIds);
       audit('admin.staff_created', { actor: req.user._id, targetType: 'staff', targetId: staff._id });
+      invalidatePrefix('public:staff');
+      invalidatePrefix('public:services');
+      invalidatePrefix('availability:');
       res.status(201).json(staff);
     } catch (error) {
       console.error('Create staff error:', error);
@@ -158,6 +166,9 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
 
     await syncStaffServices(staff, serviceIds);
     audit('admin.staff_updated', { actor: req.user._id, targetType: 'staff', targetId: staff._id });
+    invalidatePrefix('public:staff');
+    invalidatePrefix('public:services');
+    invalidatePrefix('availability:');
     res.json(staff);
   } catch (error) {
     console.error('Update staff error:', error);
@@ -180,6 +191,9 @@ router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
       return res.status(404).json({ message: 'Staff member not found' });
     }
     audit('admin.staff_deactivated', { actor: req.user._id, targetType: 'staff', targetId: staff._id });
+    invalidatePrefix('public:staff');
+    invalidatePrefix('public:services');
+    invalidatePrefix('availability:');
 
     // Clean up portfolio items from Cloudinary and DB
     try {

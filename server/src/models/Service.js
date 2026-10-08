@@ -44,4 +44,6 @@ const serviceSchema = new mongoose.Schema({
   },
 });
 
+serviceSchema.index({ isActive: 1, category: 1 });
+
 module.exports = mongoose.model('Service', serviceSchema);

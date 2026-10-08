@@ -77,12 +77,13 @@ const appointmentSchema = new mongoose.Schema({
   },
 });
 
-// Index for efficient queries
-appointmentSchema.index({ staff: 1, dayKey: 1 });
-appointmentSchema.index({ staff: 1, date: 1 });
-appointmentSchema.index({ customer: 1 });
-appointmentSchema.index({ status: 1 });
-appointmentSchema.index({ guestPhone: 1 });
+// Compound indexes match availability, calendar/admin filters and customer history.
+appointmentSchema.index({ staff: 1, dayKey: 1, status: 1, startTime: 1 });
+appointmentSchema.index({ staff: 1, date: -1, status: 1 });
+appointmentSchema.index({ customer: 1, date: -1 });
+appointmentSchema.index({ guestPhone: 1, date: -1 });
+appointmentSchema.index({ status: 1, date: -1 });
+appointmentSchema.index({ date: -1, startTime: -1 });
 appointmentSchema.index({ bookingRef: 1 }, { unique: true, sparse: true });
 
 // Auto-fill dayKey from date for legacy docs / direct creates

@@ -56,4 +56,6 @@ const staffSchema = new mongoose.Schema({
   },
 });
 
+staffSchema.index({ isActive: 1 });
+
 module.exports = mongoose.model('Staff', staffSchema);

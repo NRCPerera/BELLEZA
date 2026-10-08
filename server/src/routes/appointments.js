@@ -10,6 +10,7 @@ const Staff = require('../models/Staff');
 const { authenticate, authorize } = require('../middleware/auth');
 const { sendBookingConfirmation, sendStatusUpdateEmail } = require('../services/emailService');
 const { timeToMinutes, overlapsRange, dayBoundsUTC, isPastDate, toDayKey, isValidDayKey, isPastSlotToday } = require('../services/slotUtils');
+const { getOrSet, invalidatePrefix } = require('../services/cache');
 
 const router = express.Router();
 
@@ -68,17 +69,18 @@ const minutesToTime = (mins) => {
 // Uses dayKey (timezone-safe); falls back to legacy UTC date-range docs without dayKey.
 const getBlocksForDay = async (staffId, dayKey, dateInput) => {
   const staffCond = { $or: [{ staff: staffId }, { staff: null }] };
-  const byKey = await SlotBlock.find({ dayKey, ...staffCond }).populate('staff', 'name');
+  const byKeyQuery = SlotBlock.find({ dayKey, ...staffCond }).populate('staff', 'name').lean();
   if (dateInput) {
     const { startOfDay, endOfDay } = dayBoundsUTC(dateInput);
-    const legacy = await SlotBlock.find({
+    const legacyQuery = SlotBlock.find({
       dayKey: { $exists: false },
       date: { $gte: startOfDay, $lte: endOfDay },
       ...staffCond,
-    }).populate('staff', 'name');
+    }).populate('staff', 'name').lean();
+    const [byKey, legacy] = await Promise.all([byKeyQuery, legacyQuery]);
     return [...byKey, ...legacy];
   }
-  return byKey;
+  return byKeyQuery;
 };
 
 // Same fallback for appointments (pre-dayKey docs)
@@ -163,13 +165,15 @@ router.get('/slots', async (req, res) => {
     }
 
     // Get staff working hours
-    const staff = await Staff.findById(staffId);
+    const [staff, service] = await Promise.all([
+      getOrSet(`availability:staff:${staffId}`, () => Staff.findById(staffId).select('workingHours isActive').lean(), 5 * 60 * 1000),
+      getOrSet(`availability:service:${serviceId}`, () => Service.findById(serviceId).select('durationMinutes assignedStaff isActive').lean(), 5 * 60 * 1000),
+    ]);
     if (!staff || staff.isActive === false) {
       return res.status(404).json({ message: 'Staff not found' });
     }
 
     // Get service duration
-    const service = await Service.findById(serviceId);
     if (!service || service.isActive === false) {
       return res.status(404).json({ message: 'Service not found' });
     }
@@ -209,12 +213,16 @@ router.get('/slots', async (req, res) => {
     }
 
     // Get existing appointments for this staff on this date
-    const existingAppointments = await getAppointmentsForDay(staffId, dayKey, date, {
-      status: { $ne: 'cancelled' },
-    });
-
-    // Get admin blocks (walk-in rush) for this staff + salon-wide
-    const blocks = await getBlocksForDay(staffId, dayKey, date);
+    const availabilityData = await getOrSet(`availability:${staffId}:${dayKey}`, async () => {
+      const [appointments, blocks] = await Promise.all([
+        getAppointmentsForDay(staffId, dayKey, date, { status: { $ne: 'cancelled' } })
+          .select('startTime endTime status').lean(),
+        getBlocksForDay(staffId, dayKey, date),
+      ]);
+      return { appointments, blocks };
+    }, 30 * 1000);
+    const existingAppointments = availabilityData.appointments;
+    const blocks = availabilityData.blocks;
 
     // Filter out slots that overlap with existing bookings or blocks
     const availableSlots = allSlots.filter((slotTime) => {
@@ -234,6 +242,7 @@ router.get('/slots', async (req, res) => {
       return !blocks.some((b) => overlapsRange(slotStart, slotEnd, b.startTime, b.endTime));
     });
 
+    res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=15');
     res.json(availableSlots);
   } catch (error) {
     console.error('Get slots error:', error);
@@ -253,7 +262,7 @@ router.get('/track/:bookingRef', trackLimiter, async (req, res) => {
     const appointment = await Appointment.findOne({ bookingRef: ref }).populate([
       { path: 'staff', select: 'name photo' },
       { path: 'service', select: 'name category durationMinutes price' },
-    ]);
+    ]).lean();
     if (!appointment) {
       return res.status(404).json({ message: 'Booking not found' });
     }
@@ -325,11 +334,14 @@ router.get('/', authenticate, authorize('admin'), async (req, res) => {
       filter.dayKey = { $gte: startKey, $lte: endKey };
     }
 
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 500, 1), 1000);
     const appointments = await Appointment.find(filter)
       .populate('customer', 'name email phone')
       .populate('staff', 'name photo')
       .populate('service', 'name category durationMinutes price')
-      .sort({ date: -1, startTime: -1 });
+      .sort({ date: -1, startTime: -1 })
+      .limit(limit)
+      .lean();
 
     res.json(appointments);
   } catch (error) {
@@ -515,6 +527,7 @@ router.post(
       }
 
       const dateLabel = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      invalidatePrefix(`availability:${staffId}:${dayKey}`);
       console.log(`[booking ${bookingRef}] created (phone: ${guestPhone})`);
 
       // Email confirmation if guest provided an email
@@ -564,6 +577,7 @@ router.put('/:id/status', authenticate, authorize('admin'), async (req, res) => 
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
     }
+    invalidatePrefix('availability:');
 
     // Email status update (guest phone is identity, legacy customer fallback)
     if (['confirmed', 'cancelled', 'completed'].includes(status)) {
@@ -613,6 +627,7 @@ router.put('/:id/cancel', authenticate, authorize('admin'), async (req, res) => 
 
     appointment.status = 'cancelled';
     await appointment.save();
+    invalidatePrefix('availability:');
 
     // Email cancellation
     const contact = resolveContact(appointment);

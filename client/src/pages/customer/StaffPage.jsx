@@ -5,12 +5,12 @@ import { getStaff, getStaffMember, getStaffPortfolio } from '../../api';
 import Lightbox from '../../components/ui/Lightbox';
 import StaffCard from '../../components/ui/StaffCard';
 import { Skeleton } from '../../components/ui/Skeleton';
-import { isVideoItem, photoThumb, videoPoster, formatDuration } from '../../utils/media';
+import { isVideoItem, photoPlaceholder, photoThumb, videoPoster, formatDuration } from '../../utils/media';
 
 const Portrait = ({ member, className = '' }) => (
   <div className={`overflow-hidden bg-primary-100 text-center font-display text-4xl font-bold text-primary-700 ${className}`}>
     {member.photo ? (
-      <img src={member.photo} alt={member.name} className="h-full w-full object-cover" />
+      <img src={photoThumb(member.photo, 600)} alt={member.name} width="520" height="650" fetchPriority="high" className="h-full w-full object-cover" />
     ) : (
       member.name?.split(' ').map((x) => x[0]).join('')
     )}
@@ -92,10 +92,15 @@ export default function StaffPage() {
                       <button
                         key={item._id}
                         onClick={() => setLightbox(index)}
+                        style={!isVideoItem(item) ? { backgroundImage: `url(${photoPlaceholder(item.url)})`, backgroundSize: 'cover' } : undefined}
                         className="group relative aspect-[4/5] overflow-hidden rounded-2xl bg-primary-100"
                       >
                         <img
                           src={gridSrc(item)}
+                          srcSet={isVideoItem(item) ? undefined : [400, 800, 1200].map(width => `${photoThumb(item.url, width)} ${width}w`).join(', ')}
+                          sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+                          width={item.width || 800}
+                          height={item.height || 1000}
                           alt={item.caption || `${member.name}'s work`}
                           className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
                           loading="lazy"

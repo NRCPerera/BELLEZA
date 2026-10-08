@@ -45,7 +45,7 @@ export const changePassword = (data) => API.post('/auth/change-password', data);
 export const logout = () => API.post('/auth/logout');
 
 // Services
-export const getServices = () => API.get('/services');
+export const getServices = (config = {}) => API.get('/services', config);
 export const getAllServices = () => API.get('/services/all');
 export const getService = (id) => API.get(`/services/${id}`);
 export const createService = (data) => API.post('/services', data);
@@ -53,7 +53,7 @@ export const updateService = (id, data) => API.put(`/services/${id}`, data);
 export const deleteService = (id) => API.delete(`/services/${id}`);
 
 // Staff
-export const getStaff = () => API.get('/staff');
+export const getStaff = (config = {}) => API.get('/staff', config);
 export const getAllStaff = () => API.get('/staff/all');
 export const getStaffMember = (id) => API.get(`/staff/${id}`);
 export const createStaff = (data) => API.post('/staff', data);
@@ -62,7 +62,7 @@ export const deleteStaff = (id) => API.delete(`/staff/${id}`);
 
 // Appointments
 export const getAppointments = (params) => API.get('/appointments', { params });
-export const getAvailableSlots = (params) => API.get('/appointments/slots', { params });
+export const getAvailableSlots = (params, config = {}) => API.get('/appointments/slots', { ...config, params });
 export const createAppointment = (data) => API.post('/appointments', data);
 export const getBookingByRef = (ref) => API.get(`/appointments/track/${encodeURIComponent(ref)}`);
 export const updateAppointmentStatus = (id, status) => API.put(`/appointments/${id}/status`, { status });
@@ -102,7 +102,7 @@ export const reorderPortfolio = (order) => API.patch('/staff/me/portfolio/bulk-r
 export const deletePortfolioPhoto = (id) => API.delete(`/staff/me/portfolio/${id}`);
 
 // Portfolio - Public
-export const getRecentPortfolio = (limit) => API.get('/portfolio/recent', { params: { limit } });
+export const getRecentPortfolio = (limit, config = {}) => API.get('/portfolio/recent', { ...config, params: { limit } });
 export const getStaffPortfolio = (staffId, params) =>
   API.get(`/staff/${staffId}/portfolio`, { params });
 

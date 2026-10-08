@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowUpRight } from 'lucide-react';
+import { photoThumb } from '../../utils/media';
 
 const initials = (name) =>
   name?.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -17,9 +18,14 @@ const StaffCard = ({ member }) => (
       <span className="block h-36 w-36 overflow-hidden rounded-full bg-primary-100 ring-4 ring-primary-100 transition group-hover:ring-highlight-400">
         {member.photo ? (
           <img
-            src={member.photo}
+            src={photoThumb(member.photo, 320)}
+            srcSet={`${photoThumb(member.photo, 160)} 160w, ${photoThumb(member.photo, 320)} 320w`}
+            sizes="144px"
+            width="144"
+            height="144"
             alt={member.name}
             loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
           />
         ) : (

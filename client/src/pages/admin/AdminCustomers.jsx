@@ -4,6 +4,7 @@ import Modal from '../../components/ui/Modal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { Users, Eye, Loader2, Search, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import EmptyState from '../../components/ui/EmptyState';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 
 const AdminCustomers = () => {
   const [customers, setCustomers] = useState([]);
@@ -13,11 +14,12 @@ const AdminCustomers = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [aptsLoading, setAptsLoading] = useState(false);
   const [query, setQuery] = useState(''); const [page, setPage] = useState(1); const [error, setError] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
 
   useEffect(() => {
     getCustomers().then(res => { setCustomers(res.data); setError(''); }).catch(err => setError(err.response?.data?.message || 'Unable to load customers.')).finally(() => setLoading(false));
   }, []);
-  const filteredCustomers = customers.filter(c => `${c.name} ${c.email} ${c.phone || ''}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredCustomers = customers.filter(c => `${c.name} ${c.email} ${c.phone || ''}`.toLowerCase().includes(debouncedQuery.toLowerCase()));
   const pageSize = 8; const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize)); const displayedCustomers = filteredCustomers.slice((page - 1) * pageSize, page * pageSize);
 
   const viewHistory = async (customer) => {

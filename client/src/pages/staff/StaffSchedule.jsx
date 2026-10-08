@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Calendar as BigCalendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -47,7 +47,7 @@ const StaffSchedule = () => {
       .finally(() => setLoading(false));
   };
 
-  const events = appointments.map((apt) => {
+  const events = useMemo(() => appointments.map((apt) => {
     const dateStr = new Date(apt.date).toISOString().split('T')[0];
     return {
       id: apt._id,
@@ -56,7 +56,7 @@ const StaffSchedule = () => {
       end: new Date(dateStr + 'T' + apt.endTime + ':00'),
       resource: apt,
     };
-  });
+  }), [appointments]);
 
   const handleSelectEvent = (event) => {
     setSelectedApt(event.resource);

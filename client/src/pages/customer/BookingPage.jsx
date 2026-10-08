@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getServices, getStaff, getAvailableSlots, createAppointment } from '../../api';
 import { Check, ChevronRight, Clock, CalendarDays, User, Sparkles, ArrowLeft } from 'lucide-react';
@@ -12,11 +13,6 @@ const BookingPage = () => {
   const [searchParams] = useSearchParams();
   const requestedStaffId = searchParams.get('staffId');
   const [step, setStep] = useState(0);
-  const [services, setServices] = useState([]);
-  const [staff, setStaff] = useState([]);
-  const [slots, setSlots] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [slotsLoading, setSlotsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [booking, setBooking] = useState(null);
@@ -32,19 +28,16 @@ const BookingPage = () => {
     guestEmail: '',
   });
 
+  const servicesQuery = useQuery({ queryKey: ['services'], queryFn: ({ signal }) => getServices({ signal }).then(r => r.data) });
+  const staffQuery = useQuery({ queryKey: ['staff'], queryFn: ({ signal }) => getStaff({ signal }).then(r => r.data) });
+  const services = servicesQuery.data || [];
+  const staff = staffQuery.data || [];
+  const loading = servicesQuery.isPending || staffQuery.isPending;
+
   useEffect(() => {
-    Promise.all([getServices(), getStaff()])
-      .then(([sRes, stRes]) => {
-        setServices(sRes.data);
-        setStaff(stRes.data);
-        const requestedStaff = stRes.data.find((member) => member._id === requestedStaffId);
-        if (requestedStaff) {
-          setSelected((current) => ({ ...current, staff: requestedStaff }));
-        }
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [requestedStaffId]);
+    const requested = staff.find((member) => member._id === requestedStaffId);
+    if (requested) setSelected((current) => current.staff?._id === requested._id ? current : { ...current, staff: requested });
+  }, [requestedStaffId, staff]);
 
   const requestedStaff = staff.find((member) => member._id === requestedStaffId);
   const availableServices = requestedStaff
@@ -57,19 +50,18 @@ const BookingPage = () => {
     : [];
 
   // Fetch slots when staff and date are selected
-  useEffect(() => {
-    if (selected.staff && selected.date && selected.service) {
-      setSlotsLoading(true);
-      getAvailableSlots({
+  const slotsQuery = useQuery({
+    queryKey: ['slots', selected.staff?._id, selected.date, selected.service?._id],
+    enabled: Boolean(selected.staff && selected.date && selected.service),
+    staleTime: 30 * 1000,
+    queryFn: ({ signal }) => getAvailableSlots({
         staffId: selected.staff._id,
         date: selected.date,
         serviceId: selected.service._id,
-      })
-        .then((res) => setSlots(res.data))
-        .catch(console.error)
-        .finally(() => setSlotsLoading(false));
-    }
-  }, [selected.staff, selected.date, selected.service]);
+      }, { signal }).then(res => res.data),
+  });
+  const slots = slotsQuery.data || [];
+  const slotsLoading = slotsQuery.isFetching;
 
   const handleSubmit = async () => {
     if (!selected.guestName.trim()) {
@@ -233,7 +225,7 @@ const BookingPage = () => {
                     <div className="flex items-center gap-4">
                       <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-br from-primary-200 to-primary-400 flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
                         {member.photo ? (
-                          <img src={member.photo} alt={member.name} className="h-full w-full object-cover" loading="lazy" />
+                          <img src={member.photo} alt={member.name} width="56" height="56" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                         ) : (
                           member.name.split(' ').map(n => n[0]).join('')
                         )}
@@ -247,7 +239,7 @@ const BookingPage = () => {
                         </div>
                       </div>
                     </div>
-                    {member.portfolioPreview?.length > 0 && <div className="flex gap-1 mt-3 ml-[72px]">{member.portfolioPreview.slice(0, 3).map((url, index) => <img key={index} src={url.replace('/upload/', '/upload/w_600,c_fill,f_auto,q_auto/')} alt="Portfolio preview" className="w-10 h-10 rounded-md object-cover" loading="lazy" />)}</div>}
+                    {member.portfolioPreview?.length > 0 && <div className="flex gap-1 mt-3 ml-[72px]">{member.portfolioPreview.slice(0, 3).map((url, index) => <img key={index} src={url.replace('/upload/', '/upload/w_80,h_80,c_fill,f_auto,q_auto/')} alt="Portfolio preview" width="40" height="40" className="w-10 h-10 rounded-md object-cover" loading="lazy" decoding="async" />)}</div>}
                   </button>
                 ))}
               </div>

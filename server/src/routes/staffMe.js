@@ -9,6 +9,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { avatarFile, validateMagicBytes } = require('../middleware/upload');
 const { syncStaffServices } = require('../services/staffServices');
 const { sendStatusUpdateEmail } = require('../services/emailService');
+const { invalidatePrefix } = require('../services/cache');
 
 const router = express.Router();
 
@@ -51,38 +52,37 @@ router.get('/overview', async (req, res) => {
     const endOfDay = new Date(today);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    const todayAppointments = await Appointment.find({
+    const todayAppointmentsQuery = Appointment.find({
       staff: staffId,
       date: { $gte: startOfDay, $lte: endOfDay },
       status: { $ne: 'cancelled' },
     })
       .populate('customer', 'name email phone')
       .populate('service', 'name category durationMinutes price')
-      .sort({ startTime: 1 });
+      .sort({ startTime: 1 })
+      .lean();
 
     // Upcoming (after today, pending or confirmed)
     const tomorrow = new Date(today);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(0, 0, 0, 0);
 
-    const upcomingCount = await Appointment.countDocuments({
+    const upcomingCountQuery = Appointment.countDocuments({
       staff: staffId,
       date: { $gte: tomorrow },
       status: { $in: ['pending', 'confirmed'] },
     });
 
     // Simple stats
-    const totalCompleted = await Appointment.countDocuments({
-      staff: staffId,
-      status: 'completed',
-    });
-
-    const totalCancelled = await Appointment.countDocuments({
-      staff: staffId,
-      status: 'cancelled',
-    });
-
-    const totalAll = await Appointment.countDocuments({ staff: staffId });
+    const [todayAppointments, upcomingCount, statusTotals] = await Promise.all([
+      todayAppointmentsQuery,
+      upcomingCountQuery,
+      Appointment.aggregate([
+        { $match: { staff: staffId } },
+        { $group: { _id: null, totalAll: { $sum: 1 }, totalCompleted: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } }, totalCancelled: { $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] } } } },
+      ]),
+    ]);
+    const { totalCompleted = 0, totalCancelled = 0, totalAll = 0 } = statusTotals[0] || {};
 
     res.json({
       todayAppointments,
@@ -132,7 +132,9 @@ router.get('/appointments', async (req, res) => {
       .populate('customer', 'name email phone')
       .populate('staff', 'name photo')
       .populate('service', 'name category durationMinutes price')
-      .sort({ date: -1, startTime: -1 });
+      .sort({ date: -1, startTime: -1 })
+      .limit(Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 200, 1), 500))
+      .lean();
 
     res.json(appointments);
   } catch (error) {
@@ -185,6 +187,7 @@ router.patch(
 
       appointment.status = status;
       await appointment.save();
+      invalidatePrefix('availability:');
 
       // Trigger status email for known statuses
       if (['confirmed', 'completed'].includes(status)) {

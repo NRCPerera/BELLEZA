@@ -4,6 +4,8 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
+  MONGODB_MAX_POOL_SIZE: z.coerce.number().int().min(2).max(50).default(10),
+  MONGODB_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(5000),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   CLIENT_URL: z.string().url('CLIENT_URL must be an absolute URL'),
   COOKIE_DOMAIN: z.string().optional().default(''),

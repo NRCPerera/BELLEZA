@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Navbar from './components/layout/Navbar';
@@ -5,34 +6,34 @@ import Footer from './components/layout/Footer';
 import { PageSpinner } from './components/ui/Spinner';
 
 // Customer pages
-import LandingPage from './pages/customer/LandingPage';
-import ServicesPage from './pages/customer/ServicesPage';
-import StaffPage from './pages/customer/StaffPage';
-import BookingPage from './pages/customer/BookingPage';
-import TrackBookingPage from './pages/customer/TrackBookingPage';
+const LandingPage = lazy(() => import('./pages/customer/LandingPage'));
+const ServicesPage = lazy(() => import('./pages/customer/ServicesPage'));
+const StaffPage = lazy(() => import('./pages/customer/StaffPage'));
+const BookingPage = lazy(() => import('./pages/customer/BookingPage'));
+const TrackBookingPage = lazy(() => import('./pages/customer/TrackBookingPage'));
 
 // Auth pages
-import LoginPage from './pages/auth/LoginPage';
-import ChangePasswordPage from './pages/auth/ChangePasswordPage';
+const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
+const ChangePasswordPage = lazy(() => import('./pages/auth/ChangePasswordPage'));
 
 // Admin pages
-import AdminLayout from './pages/admin/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminCalendar from './pages/admin/AdminCalendar';
-import AdminAppointments from './pages/admin/AdminAppointments';
-import AdminStaff from './pages/admin/AdminStaff';
-import AdminServices from './pages/admin/AdminServices';
-import AdminCustomers from './pages/admin/AdminCustomers';
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminCalendar = lazy(() => import('./pages/admin/AdminCalendar'));
+const AdminAppointments = lazy(() => import('./pages/admin/AdminAppointments'));
+const AdminStaff = lazy(() => import('./pages/admin/AdminStaff'));
+const AdminServices = lazy(() => import('./pages/admin/AdminServices'));
+const AdminCustomers = lazy(() => import('./pages/admin/AdminCustomers'));
 
 // Staff pages
-import StaffLayout from './pages/staff/StaffLayout';
-import StaffHome from './pages/staff/StaffHome';
-import StaffSchedule from './pages/staff/StaffSchedule';
-import StaffAppointments from './pages/staff/StaffAppointments';
-import StaffProfile from './pages/staff/StaffProfile';
-import StaffChangePassword from './pages/staff/StaffChangePassword';
-import StaffPortfolio from './pages/staff/StaffPortfolio';
-import DesignSystemPage from './pages/DesignSystemPage';
+const StaffLayout = lazy(() => import('./pages/staff/StaffLayout'));
+const StaffHome = lazy(() => import('./pages/staff/StaffHome'));
+const StaffSchedule = lazy(() => import('./pages/staff/StaffSchedule'));
+const StaffAppointments = lazy(() => import('./pages/staff/StaffAppointments'));
+const StaffProfile = lazy(() => import('./pages/staff/StaffProfile'));
+const StaffChangePassword = lazy(() => import('./pages/staff/StaffChangePassword'));
+const StaffPortfolio = lazy(() => import('./pages/staff/StaffPortfolio'));
+const DesignSystemPage = lazy(() => import('./pages/DesignSystemPage'));
 
 const homeByRole = { admin: '/admin', staff: '/staff' };
 
@@ -50,7 +51,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const PasswordChangeGate = ({ children }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <PageSpinner />;
+  const isPortal = location.pathname.startsWith('/admin') || location.pathname.startsWith('/staff') || location.pathname === '/change-password';
+  if (loading && isPortal) return <PageSpinner />;
   if (user?.mustChangePassword && location.pathname !== '/change-password') {
     return <Navigate to="/change-password" replace />;
   }
@@ -68,7 +70,7 @@ const PublicLayout = () => (
 
 function App() {
   return (
-    <PasswordChangeGate><Routes>
+    <PasswordChangeGate><Suspense fallback={<PageSpinner />}><Routes>
       {/* Public pages - no login required, guest booking via mobile */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<LandingPage />} />
@@ -109,7 +111,7 @@ function App() {
       {/* Catch all */}
       {import.meta.env.DEV && <Route path="/design-system" element={<DesignSystemPage />} />}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes></PasswordChangeGate>
+    </Routes></Suspense></PasswordChangeGate>
   );
 }
 

@@ -6,6 +6,7 @@ const Staff = require('../models/Staff');
 const { authenticate, authorize } = require('../middleware/auth');
 const { portfolioMediaFiles, validateMagicBytes, detectMediaType, isVideoMime } = require('../middleware/upload');
 const rateLimit = require('express-rate-limit');
+const { getOrSet, invalidatePrefix } = require('../services/cache');
 
 const router = express.Router();
 
@@ -35,6 +36,10 @@ const uploadToCloudinary = (buffer, folder) =>
         format: 'webp', // standardize to webp
         quality: 'auto:good',
         transformation: [{ width: 2000, height: 2000, crop: 'limit' }],
+        eager: [
+          { width: 400, height: 500, crop: 'fill', quality: 'auto', fetch_format: 'auto' },
+          { width: 800, height: 1000, crop: 'fill', quality: 'auto', fetch_format: 'auto' },
+        ],
       },
       (error, result) => {
         if (error) return reject(error);
@@ -110,13 +115,15 @@ router.get('/recent', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 12, 24);
 
-    const photos = await PortfolioPhoto.find()
+    const photos = await getOrSet(`public:portfolio:recent:${limit}`, () => PortfolioPhoto.find()
       .populate('staff', 'name photo')
       .populate('service', 'name category')
       .sort({ createdAt: -1 })
       .limit(limit)
-      .select(PORTFOLIO_SELECT);
+      .select(PORTFOLIO_SELECT)
+      .lean(), 2 * 60 * 1000);
 
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300');
     res.json(photos);
   } catch (error) {
     console.error('Get recent portfolio error:', error);
@@ -283,6 +290,8 @@ router.post(
         }
       }
 
+      invalidatePrefix('public:portfolio');
+      invalidatePrefix('public:staff');
       res.status(201).json({
         uploaded: results,
         errors,
@@ -330,6 +339,7 @@ router.patch(
       }
 
       await photo.save();
+      invalidatePrefix('public:portfolio');
       res.json(photo);
     } catch (error) {
       console.error('Portfolio update error:', error);
@@ -369,6 +379,8 @@ router.patch(
       const photos = await PortfolioPhoto.find({ staff: req.staffProfile._id })
         .sort({ order: 1, createdAt: -1 });
 
+      invalidatePrefix('public:portfolio');
+      invalidatePrefix('public:staff');
       res.json(photos);
     } catch (error) {
       console.error('Portfolio reorder error:', error);
@@ -410,6 +422,8 @@ router.delete(
       }
 
       await PortfolioPhoto.findByIdAndDelete(photo._id);
+      invalidatePrefix('public:portfolio');
+      invalidatePrefix('public:staff');
 
       res.json({ message: 'Item deleted successfully' });
     } catch (error) {
