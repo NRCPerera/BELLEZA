@@ -14,6 +14,7 @@ const Service = require('../models/Service');
 const Staff = require('../models/Staff');
 const User = require('../models/User');
 const appointmentsRouter = require('./appointments');
+const authRouter = require('./auth');
 
 let mongo;
 let app;
@@ -24,6 +25,7 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use(cookieParser());
+  app.use('/api/auth', authRouter);
   app.use('/api/appointments', appointmentsRouter);
 });
 
@@ -59,4 +61,42 @@ test('guest booking can be created, listed as unavailable, and cancelled by an a
   expect(cancelled.status).toBe(200);
   expect(cancelled.body.status).toBe('cancelled');
   expect((await Appointment.findById(created.body._id).lean()).status).toBe('cancelled');
+}, 30000);
+
+test('production login issues a cross-site session and exposes a CSRF token', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousSameSite = process.env.COOKIE_SAME_SITE;
+  process.env.NODE_ENV = 'production';
+  delete process.env.COOKIE_SAME_SITE;
+
+  try {
+    await User.create({
+      name: 'Staff Login Tester',
+      email: 'staff-login@example.com',
+      password: 'StrongPassword123',
+      role: 'staff',
+    });
+
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'staff-login@example.com', password: 'StrongPassword123' });
+
+    expect(login.status).toBe(200);
+    expect(login.headers['set-cookie'].find((cookie) => cookie.startsWith('auth_token=')))
+      .toMatch(/; Secure;.*SameSite=None/);
+    expect(login.headers['x-csrf-token']).toMatch(/^[a-f0-9]{64}$/);
+
+    const authCookie = login.headers['set-cookie']
+      .find((cookie) => cookie.startsWith('auth_token='))
+      .split(';', 1)[0];
+    const me = await request(app).get('/api/auth/me').set('Cookie', authCookie);
+
+    expect(me.status).toBe(200);
+    expect(me.body.role).toBe('staff');
+    expect(me.headers['x-csrf-token']).toBe(login.headers['x-csrf-token']);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    if (previousSameSite === undefined) delete process.env.COOKIE_SAME_SITE;
+    else process.env.COOKIE_SAME_SITE = previousSameSite;
+  }
 }, 30000);

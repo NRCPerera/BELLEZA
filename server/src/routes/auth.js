@@ -13,7 +13,7 @@ const router = express.Router();
 const authCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  sameSite: process.env.COOKIE_SAME_SITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax'),
   ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
   maxAge: 8 * 60 * 60 * 1000,
 });
@@ -21,7 +21,7 @@ const authCookieOptions = () => ({
 const csrfCookieOptions = () => ({
   httpOnly: false,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  sameSite: process.env.COOKIE_SAME_SITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax'),
   ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
   maxAge: 8 * 60 * 60 * 1000,
 });
@@ -116,6 +116,7 @@ router.post(
       const token = generateToken(user);
       res.cookie('auth_token', token, authCookieOptions());
       res.cookie('csrf_token', user.csrfToken, csrfCookieOptions());
+      res.set('X-CSRF-Token', user.csrfToken);
       audit('auth.login_success', { actor: user._id, metadata: { role: user.role } });
 
       res.json({
@@ -179,6 +180,7 @@ router.post(
       const token = generateToken(user);
       res.cookie('auth_token', token, authCookieOptions());
       res.cookie('csrf_token', user.csrfToken, csrfCookieOptions());
+      res.set('X-CSRF-Token', user.csrfToken);
       audit('auth.password_changed', { actor: user._id });
 
       res.json({

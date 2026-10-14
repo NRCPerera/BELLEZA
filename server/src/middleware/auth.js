@@ -22,6 +22,10 @@ const authenticate = async (req, res, next) => {
     if (req.user.mustChangePassword && !req.originalUrl.endsWith('/auth/me') && !req.originalUrl.endsWith('/auth/change-password')) {
       return res.status(403).json({ message: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' });
     }
+    // The SPA can be hosted on a different site from the API, so it cannot read
+    // the API's non-httpOnly CSRF cookie. Return the token on authenticated
+    // responses; CORS only exposes it to explicitly allowed client origins.
+    res.set('X-CSRF-Token', req.user.csrfToken);
     return csrfProtection(req, res, next);
   } catch (error) {
     return res.status(401).json({ message: 'Authentication required' });

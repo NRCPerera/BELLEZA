@@ -7,7 +7,9 @@ const API = axios.create({
   withCredentials: true,
 });
 
-const csrfToken = () => document.cookie.split('; ').find((cookie) => cookie.startsWith('csrf_token='))?.split('=').slice(1).join('');
+let responseCsrfToken = '';
+const csrfToken = () => responseCsrfToken
+  || document.cookie.split('; ').find((cookie) => cookie.startsWith('csrf_token='))?.split('=').slice(1).join('');
 
 // Cookie sessions are httpOnly; CSRF token is sent on state-changing requests.
 API.interceptors.request.use((config) => {
@@ -20,12 +22,17 @@ API.interceptors.request.use((config) => {
 
 // Handle 401 responses (staff/admin portal only - public guest booking never redirects)
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const token = response.headers['x-csrf-token'];
+    if (token) responseCsrfToken = token;
+    return response;
+  },
   (error) => {
     const isCredentialCheck = ['/auth/login', '/auth/change-password'].some((path) =>
       error.config?.url?.includes(path)
     );
     if (error.response?.status === 401 && !isCredentialCheck) {
+      responseCsrfToken = '';
       // Only redirect if already inside the hidden staff/admin portal
       const path = window.location.pathname;
       const inPortal = path.startsWith('/admin') || path.startsWith('/staff');

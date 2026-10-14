@@ -69,6 +69,7 @@ app.use(cors({
     return callback(error);
   },
   credentials: true,
+  exposedHeaders: ['X-CSRF-Token'],
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '20kb' }));
