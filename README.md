@@ -95,7 +95,7 @@ MONGODB_SERVER_SELECTION_TIMEOUT_MS=5000
 JWT_SECRET=replace_with_a_random_secret_of_at_least_32_characters
 CLIENT_URL=http://localhost:5173
 COOKIE_DOMAIN=
-COOKIE_SAME_SITE=lax # use none when the deployed frontend and API are on different sites
+COOKIE_SAME_SITE=lax
 
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
@@ -110,7 +110,7 @@ SLOW_QUERY_MS=100
 
 `MONGODB_URI`, `JWT_SECRET`, and `CLIENT_URL` are required. Email is optional: when both `RESEND_API_KEY` and `EMAIL_FROM` are omitted, bookings continue to work and email delivery is skipped. Keep Cloudinary credentials on the server and never expose them through `VITE_*` variables.
 
-The client uses `/api` by default. Set `VITE_API_URL=http://localhost:5000/api` in `client/.env` only when the frontend is not proxying `/api` to the local server.
+The client uses `/api` by default. Vite proxies that path to the local server during development, and Render proxies it to the deployed API in production.
 
 ### 3. Optional development seed
 
@@ -212,7 +212,14 @@ Create two Render services from this repository:
 
 Set the API health-check path to `/health`. Render supplies `PORT`, so a fixed production value is unnecessary.
 
-For the API, configure `NODE_ENV=production`, `MONGODB_URI`, a random `JWT_SECRET` of at least 32 characters, the final `CLIENT_URL`, the Cloudinary variables, and—when email is enabled—both `RESEND_API_KEY` and `EMAIL_FROM`. Production defaults `COOKIE_SAME_SITE` to `none` so a separately hosted HTTPS frontend can receive the API session cookie. Leave `COOKIE_DOMAIN` empty for separate `*.onrender.com` services (a host-only cookie); configure a shared parent such as `.example.com` only when using your own related client and API domains. For the static site, set `VITE_API_URL` to the public API URL ending in `/api` before building.
+For the API, configure `NODE_ENV=production`, `MONGODB_URI`, a random `JWT_SECRET` of at least 32 characters, the final `CLIENT_URL`, the Cloudinary variables, and—when email is enabled—both `RESEND_API_KEY` and `EMAIL_FROM`. Keep `COOKIE_DOMAIN` empty and set `COOKIE_SAME_SITE=lax`. The static site's first `_redirects` rule proxies `/api/*` to the API service, so keep `VITE_API_URL=/api`. This same-origin route prevents browsers from treating the session as a third-party cookie. Keep the `/api/*` rule before the React Router fallback rule.
+
+If the API service URL changes, update `client/public/_redirects` and redeploy the client. In the Render dashboard, verify that the static site's redirects/rewrites list contains these rules in this order:
+
+| Source | Destination | Action |
+| --- | --- | --- |
+| `/api/*` | `https://belleza-lq1z.onrender.com/api/*` | Rewrite |
+| `/*` | `/index.html` | Rewrite |
 
 In Atlas, create a least-privilege database user and restrict network access to the API service where possible. Production disables automatic index creation; review `npm run indexes:check`, then run `npm run indexes:apply` during a controlled deployment when indexes change.
 

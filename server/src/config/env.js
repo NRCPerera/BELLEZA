@@ -24,7 +24,9 @@ const loadEnv = () => {
   const result = schema.safeParse(process.env);
   if (!result.success) throw new Error(`Invalid environment: ${result.error.issues.map((i) => i.message).join('; ')}`);
   const env = result.data;
-  env.COOKIE_SAME_SITE ||= env.NODE_ENV === 'production' ? 'none' : 'lax';
+  // The production client proxies /api through its own origin, so Lax is both
+  // sufficient and more widely compatible than a third-party None cookie.
+  env.COOKIE_SAME_SITE ||= 'lax';
   if (env.NODE_ENV === 'production') {
     const cloudinary = [env.CLOUDINARY_CLOUD_NAME, env.CLOUDINARY_API_KEY, env.CLOUDINARY_API_SECRET];
     if (cloudinary.some(Boolean) && cloudinary.some((value) => !value)) throw new Error('All Cloudinary variables must be configured together');
